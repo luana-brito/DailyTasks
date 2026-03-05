@@ -8,16 +8,16 @@ type ProfileModalProps = {
   onClose: () => void
   onSave: (dados: {
     nome: string
-    email: string
     telefone: string
-    senha?: string
+    senhaAtual?: string
+    novaSenha?: string
   }) => Promise<void>
 }
 
 export function ProfileModal({ aberto, usuario, onClose, onSave }: ProfileModalProps) {
   const [nome, setNome] = useState('')
-  const [email, setEmail] = useState('')
   const [telefone, setTelefone] = useState('')
+  const [senhaAtual, setSenhaAtual] = useState('')
   const [novaSenha, setNovaSenha] = useState('')
   const [confirmarSenha, setConfirmarSenha] = useState('')
   const [salvando, setSalvando] = useState(false)
@@ -27,8 +27,8 @@ export function ProfileModal({ aberto, usuario, onClose, onSave }: ProfileModalP
   useEffect(() => {
     if (aberto && usuario) {
       setNome(usuario.nome)
-      setEmail(usuario.email)
       setTelefone(formatarTelefone(usuario.telefone))
+      setSenhaAtual('')
       setNovaSenha('')
       setConfirmarSenha('')
       setErro(null)
@@ -58,14 +58,14 @@ export function ProfileModal({ aberto, usuario, onClose, onSave }: ProfileModalP
       return
     }
 
-    if (!email.trim()) {
-      setErro('E-mail é obrigatório')
-      return
-    }
-
     const telefoneNumeros = telefone.replace(/\D/g, '')
     if (telefoneNumeros.length < 10) {
       setErro('Telefone deve ter pelo menos 10 dígitos')
+      return
+    }
+
+    if (novaSenha && !senhaAtual) {
+      setErro('Informe a senha atual para alterar a senha')
       return
     }
 
@@ -74,8 +74,8 @@ export function ProfileModal({ aberto, usuario, onClose, onSave }: ProfileModalP
       return
     }
 
-    if (novaSenha && novaSenha.length < 4) {
-      setErro('A nova senha deve ter pelo menos 4 caracteres')
+    if (novaSenha && novaSenha.length < 6) {
+      setErro('A nova senha deve ter pelo menos 6 caracteres')
       return
     }
 
@@ -84,9 +84,9 @@ export function ProfileModal({ aberto, usuario, onClose, onSave }: ProfileModalP
     try {
       await onSave({
         nome: nome.trim(),
-        email: email.trim(),
         telefone: telefoneNumeros,
-        senha: novaSenha || undefined
+        senhaAtual: senhaAtual || undefined,
+        novaSenha: novaSenha || undefined
       })
       setSucesso(true)
       setTimeout(() => {
@@ -116,15 +116,15 @@ export function ProfileModal({ aberto, usuario, onClose, onSave }: ProfileModalP
 
         <form className="modal-form" onSubmit={handleSubmit}>
           <div className="field">
-            <label htmlFor="profile-login">Login</label>
+            <label htmlFor="profile-email">E-mail</label>
             <input
-              id="profile-login"
-              type="text"
-              value={usuario.login}
+              id="profile-email"
+              type="email"
+              value={usuario.email}
               disabled
               className="input-disabled"
             />
-            <span className="helper-text">O login não pode ser alterado</span>
+            <span className="helper-text">O e-mail não pode ser alterado</span>
           </div>
 
           <div className="field">
@@ -137,20 +137,6 @@ export function ProfileModal({ aberto, usuario, onClose, onSave }: ProfileModalP
               value={nome}
               onChange={(e) => setNome(e.target.value)}
               placeholder="Seu nome completo"
-              required
-            />
-          </div>
-
-          <div className="field">
-            <label htmlFor="profile-email">
-              E-mail <span className="required-marker">*</span>
-            </label>
-            <input
-              id="profile-email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="seu@email.com"
               required
             />
           </div>
@@ -174,13 +160,24 @@ export function ProfileModal({ aberto, usuario, onClose, onSave }: ProfileModalP
           </div>
 
           <div className="field">
+            <label htmlFor="profile-senha-atual">Senha atual</label>
+            <input
+              id="profile-senha-atual"
+              type="password"
+              value={senhaAtual}
+              onChange={(e) => setSenhaAtual(e.target.value)}
+              placeholder="Necessário para alterar a senha"
+            />
+          </div>
+
+          <div className="field">
             <label htmlFor="profile-nova-senha">Nova senha</label>
             <input
               id="profile-nova-senha"
               type="password"
               value={novaSenha}
               onChange={(e) => setNovaSenha(e.target.value)}
-              placeholder="Deixe em branco para manter a atual"
+              placeholder="Mínimo 6 caracteres"
             />
           </div>
 

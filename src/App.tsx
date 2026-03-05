@@ -13,19 +13,17 @@ import { ThemeToggle, useThemeInit } from './components/ThemeToggle'
 import { ProfileModal } from './components/ProfileModal'
 import { IconTasks, IconUsers, IconPlus, IconLogout, IconLayers } from './components/Icons'
 import type { Filtros, Status, Tarefa, Usuario, UsuarioRole } from './types'
-import { compararSenhaComHash, gerarHashSenha } from './utils/crypto'
 import { enviarMensagemSms } from './utils/sms'
 import { useUsuarios, useTarefas } from './hooks/useFirestore'
+import { useAuth } from './hooks/useAuth'
 import {
-  criarUsuarioApi,
+  criarUsuarioFirestore,
   atualizarUsuarioApi,
   removerUsuarioApi,
   criarTarefaApi,
   atualizarTarefaApi,
   removerTarefaApi
 } from './services/api'
-
-const SESSION_STORAGE_KEY = 'pwa-daily-sessao'
 
 type ModalTempoState =
   | { aberto: false }
@@ -35,12 +33,21 @@ type ModalTarefaState =
   | { aberto: false }
   | { aberto: true; tarefa: Tarefa | null }
 
-const normalizarLogin = (valor: string) => valor.trim().toLowerCase()
 const normalizarEmail = (valor: string) => valor.trim().toLowerCase()
 const normalizarTelefone = (valor: string) => valor.replace(/\D/g, '')
 
 function App() {
   useThemeInit()
+  
+  const { 
+    usuario: usuarioLogado, 
+    loading: carregandoAuth, 
+    error: erroAuth,
+    login,
+    logout,
+    criarUsuarioAuth,
+    alterarSenha
+  } = useAuth()
   
   const { data: usuarios, loading: carregandoUsuarios, error: erroUsuarios } = useUsuarios()
   const { data: tarefas, loading: carregandoTarefas, error: erroTarefas } = useTarefas()
@@ -55,7 +62,6 @@ function App() {
     atribuicoes: 'EU'
   })
   const [modo, setModo] = useState<ViewMode>('tabela')
-  const [usuarioLogado, setUsuarioLogado] = useState<Usuario | null>(null)
   const [abaAtiva, setAbaAtiva] = useState<'tarefas' | 'usuarios'>('tarefas')
   const [erroLogin, setErroLogin] = useState<string | null>(null)
   const [processandoLogin, setProcessandoLogin] = useState(false)
@@ -63,53 +69,6 @@ function App() {
   const [modalTempo, setModalTempo] = useState<ModalTempoState>({ aberto: false })
   const [modalPerfil, setModalPerfil] = useState(false)
   const ultimoUsuarioIdRef = useRef<string | null>(null)
-  const sessaoRestaurada = useRef(false)
-
-  useEffect(() => {
-    if (carregandoUsuarios || sessaoRestaurada.current) return
-    
-    const loginPersistido =
-      typeof window !== 'undefined'
-        ? window.localStorage.getItem(SESSION_STORAGE_KEY)
-        : null
-
-    if (loginPersistido) {
-      const usuario = usuarios.find(
-        (item) => item.login === loginPersistido && item.status === 'ATIVO'
-      )
-      if (usuario) {
-        setUsuarioLogado(usuario)
-      } else if (typeof window !== 'undefined') {
-        window.localStorage.removeItem(SESSION_STORAGE_KEY)
-      }
-    }
-    
-    sessaoRestaurada.current = true
-  }, [carregandoUsuarios, usuarios])
-
-  useEffect(() => {
-    if (!usuarioLogado) return
-    const usuarioAtualizado = usuarios.find((usuario) => usuario.id === usuarioLogado.id)
-
-    if (!usuarioAtualizado || usuarioAtualizado.status !== 'ATIVO') {
-      setUsuarioLogado(null)
-      setAbaAtiva('tarefas')
-    if (typeof window !== 'undefined') {
-        window.localStorage.removeItem(SESSION_STORAGE_KEY)
-      }
-      return
-    }
-
-    if (
-      usuarioAtualizado.nome !== usuarioLogado.nome ||
-      usuarioAtualizado.email !== usuarioLogado.email ||
-      usuarioAtualizado.status !== usuarioLogado.status ||
-      usuarioAtualizado.role !== usuarioLogado.role ||
-      usuarioAtualizado.senhaHash !== usuarioLogado.senhaHash
-    ) {
-      setUsuarioLogado(usuarioAtualizado)
-    }
-  }, [usuarios, usuarioLogado])
 
   useEffect(() => {
     if (usuarioLogado?.role !== 'ADMIN' && abaAtiva === 'usuarios') {
@@ -153,6 +112,12 @@ function App() {
     })
   }, [usuarioLogado, usuarios])
 
+  useEffect(() => {
+    if (erroAuth) {
+      setErroLogin(erroAuth)
+    }
+  }, [erroAuth])
+
   const tarefasFiltradasPorCategoria = useMemo(() => {
     const idsFiltro =
       filtros.atribuicoes === 'TODOS'
@@ -191,8 +156,8 @@ function App() {
     return mapa
   }, [usuarios])
 
-  const handleLogout = () => {
-    setUsuarioLogado(null)
+  const handleLogout = async () => {
+    await logout()
     setAbaAtiva('tarefas')
     setModalTarefa({ aberto: false })
     setModalTempo({ aberto: false })
@@ -200,44 +165,19 @@ function App() {
       ...atual,
       atribuicoes: 'TODOS'
     }))
-    if (typeof window !== 'undefined') {
-      window.localStorage.removeItem(SESSION_STORAGE_KEY)
-    }
   }
 
-  const handleLogin = async ({ login, senha }: LoginCredenciais) => {
+  const handleLogin = async ({ login: email, senha }: LoginCredenciais) => {
     setErroLogin(null)
     setProcessandoLogin(true)
 
     try {
-      const loginNormalizado = normalizarLogin(login)
-      const usuarioEncontrado = usuarios.find(
-        (usuario) => normalizarLogin(usuario.login) === loginNormalizado
-      )
-
-      if (!usuarioEncontrado) {
-        throw new Error('Login ou senha inválidos.')
-      }
-
-      const senhaValida = await compararSenhaComHash(senha, usuarioEncontrado.senhaHash)
-
-      if (!senhaValida) {
-        throw new Error('Login ou senha inválidos.')
-      }
-
-      if (usuarioEncontrado.status !== 'ATIVO') {
-        throw new Error('Usuário inativo. Solicite a ativação ao administrador.')
-      }
-
-      setUsuarioLogado(usuarioEncontrado)
+      await login(email, senha)
       setFiltros((atual) => ({
         ...atual,
         atribuicoes: 'EU'
       }))
       setAbaAtiva('tarefas')
-      if (typeof window !== 'undefined') {
-        window.localStorage.setItem(SESSION_STORAGE_KEY, usuarioEncontrado.login)
-      }
     } catch (err) {
       if (err instanceof Error) {
         setErroLogin(err.message)
@@ -258,14 +198,11 @@ function App() {
     telefone: string
     senha?: string
   }) => {
-    const loginNormalizado = normalizarLogin(dados.login)
     const emailNormalizado = normalizarEmail(dados.email)
     const telefoneNormalizado = normalizarTelefone(dados.telefone)
 
-    if (
-      usuarios.some((usuario) => normalizarLogin(usuario.login) === loginNormalizado)
-    ) {
-      throw new Error('Já existe um usuário com este login.')
+    if (!emailNormalizado.endsWith('@saude.pe.gov.br')) {
+      throw new Error('Apenas e-mails @saude.pe.gov.br são permitidos.')
     }
 
     if (
@@ -278,16 +215,19 @@ function App() {
       throw new Error('Informe um telefone válido com DDD (ex.: 5511999999999).')
     }
 
-    const senhaHash = await gerarHashSenha(dados.senha ?? '')
+    if (!dados.senha || dados.senha.length < 6) {
+      throw new Error('A senha deve ter pelo menos 6 caracteres.')
+    }
 
-    await criarUsuarioApi({
-      login: dados.login.trim(),
+    const uid = await criarUsuarioAuth(dados.email.trim(), dados.senha)
+
+    await criarUsuarioFirestore(uid, {
+      login: dados.email.trim(),
       nome: dados.nome.trim(),
       email: dados.email.trim(),
       telefone: telefoneNormalizado,
       status: dados.status,
-      role: dados.role,
-      senhaHash
+      role: dados.role
     })
   }
 
@@ -308,16 +248,7 @@ function App() {
       throw new Error('Usuário não encontrado.')
     }
 
-    const emailNormalizado = normalizarEmail(dados.email)
     const telefoneNormalizado = normalizarTelefone(dados.telefone)
-    if (
-      usuarios.some(
-        (usuario) =>
-          usuario.id !== id && normalizarEmail(usuario.email) === emailNormalizado
-      )
-    ) {
-      throw new Error('Já existe um usuário com este e-mail.')
-    }
 
     if (
       usuarioExistente.role === 'ADMIN' &&
@@ -331,16 +262,11 @@ function App() {
       throw new Error('Informe um telefone válido com DDD (ex.: 5511999999999).')
     }
 
-    const senhaHash =
-      dados.senha && dados.senha.trim() ? await gerarHashSenha(dados.senha) : undefined
-
     await atualizarUsuarioApi(usuarioExistente.id, {
       nome: dados.nome.trim(),
-      email: dados.email.trim(),
       telefone: telefoneNormalizado,
       status: dados.status,
-      role: dados.role,
-      ...(senhaHash ? { senhaHash } : {})
+      role: dados.role
     })
 
     if (usuarioLogado?.id === id && dados.status !== 'ATIVO') {
@@ -350,37 +276,25 @@ function App() {
 
   const handleSalvarPerfil = async (dados: {
     nome: string
-    email: string
     telefone: string
-    senha?: string
+    senhaAtual?: string
+    novaSenha?: string
   }) => {
     if (!usuarioLogado) return
 
-    const emailNormalizado = normalizarEmail(dados.email)
     const telefoneNormalizado = normalizarTelefone(dados.telefone)
-
-    if (
-      usuarios.some(
-        (usuario) =>
-          usuario.id !== usuarioLogado.id &&
-          normalizarEmail(usuario.email) === emailNormalizado
-      )
-    ) {
-      throw new Error('Já existe um usuário com este e-mail.')
-    }
 
     if (!telefoneNormalizado || telefoneNormalizado.length < 10) {
       throw new Error('Informe um telefone válido com DDD.')
     }
 
-    const senhaHash =
-      dados.senha && dados.senha.trim() ? await gerarHashSenha(dados.senha) : undefined
+    if (dados.novaSenha && dados.senhaAtual) {
+      await alterarSenha(dados.senhaAtual, dados.novaSenha)
+    }
 
     await atualizarUsuarioApi(usuarioLogado.id, {
       nome: dados.nome.trim(),
-      email: dados.email.trim(),
-      telefone: telefoneNormalizado,
-      ...(senhaHash ? { senhaHash } : {})
+      telefone: telefoneNormalizado
     })
   }
 
@@ -589,7 +503,7 @@ function App() {
     )
   }
 
-  if (carregandoUsuarios || carregandoTarefas) {
+  if (carregandoAuth || carregandoUsuarios || carregandoTarefas) {
     return (
       <div className="loading-screen">
         <div className="loading-card">

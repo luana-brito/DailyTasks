@@ -15,13 +15,13 @@ type LoginScreenProps = {
 
 export function LoginScreen({ onSubmit, carregando = false, erro = null }: LoginScreenProps) {
   useThemeInit()
-  const [login, setLogin] = useState('')
+  const [email, setEmail] = useState('')
   const [senha, setSenha] = useState('')
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (!login.trim() || !senha.trim()) return
-    await onSubmit({ login: login.trim(), senha })
+    if (!email.trim() || !senha.trim()) return
+    await onSubmit({ login: email.trim(), senha })
   }
 
   return (
@@ -41,14 +41,14 @@ export function LoginScreen({ onSubmit, carregando = false, erro = null }: Login
 
         <form className="login-form" onSubmit={handleSubmit}>
           <div className="field">
-            <label htmlFor="login">Login</label>
+            <label htmlFor="email">E-mail institucional</label>
             <input
-              id="login"
-              type="text"
-              autoComplete="username"
-              value={login}
-              onChange={(event) => setLogin(event.target.value)}
-              placeholder="Digite seu login"
+              id="email"
+              type="email"
+              autoComplete="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              placeholder="usuario@saude.pe.gov.br"
               required
             />
           </div>

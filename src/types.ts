@@ -33,7 +33,6 @@ export interface Usuario {
   telefone: string
   status: UsuarioStatus
   role: UsuarioRole
-  senhaHash: string
   criadoEm: string
   atualizadoEm: string
 }

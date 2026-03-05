@@ -43,13 +43,12 @@ export function useUsuarios(): UseCollectionResult<Usuario> {
           const docData = doc.data()
           return {
             id: doc.id,
-            login: docData.login ?? '',
+            login: docData.login ?? docData.email ?? '',
             nome: docData.nome ?? '',
             email: docData.email ?? '',
             telefone: docData.telefone ?? '',
             status: docData.status ?? 'ATIVO',
             role: docData.role ?? 'USUARIO',
-            senhaHash: docData.senhaHash ?? '',
             criadoEm: timestampToISO(docData.criadoEm),
             atualizadoEm: timestampToISO(docData.atualizadoEm)
           } as Usuario

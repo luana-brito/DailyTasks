@@ -1,6 +1,7 @@
 import {
   collection,
   doc,
+  setDoc,
   addDoc,
   updateDoc,
   deleteDoc,
@@ -23,12 +24,15 @@ const removeUndefined = <T extends Record<string, unknown>>(obj: T): Partial<T> 
 
 export type CriarUsuarioPayload = Omit<Usuario, 'id' | 'criadoEm' | 'atualizadoEm'>
 
-export async function criarUsuarioApi(payload: CriarUsuarioPayload): Promise<Usuario> {
-  const usuariosRef = collection(db, 'usuarios')
+export async function criarUsuarioFirestore(
+  uid: string,
+  payload: CriarUsuarioPayload
+): Promise<Usuario> {
+  const usuarioRef = doc(db, 'usuarios', uid)
   
   const dadosLimpos = removeUndefined(payload)
   
-  const docRef = await addDoc(usuariosRef, {
+  await setDoc(usuarioRef, {
     ...dadosLimpos,
     criadoEm: serverTimestamp(),
     atualizadoEm: serverTimestamp()
@@ -36,7 +40,7 @@ export async function criarUsuarioApi(payload: CriarUsuarioPayload): Promise<Usu
 
   const now = new Date().toISOString()
   return {
-    id: docRef.id,
+    id: uid,
     ...payload,
     criadoEm: now,
     atualizadoEm: now
@@ -50,7 +54,7 @@ export type AtualizarUsuarioPayload = Partial<
 export async function atualizarUsuarioApi(
   id: string,
   payload: AtualizarUsuarioPayload
-): Promise<Usuario> {
+): Promise<void> {
   const usuarioRef = doc(db, 'usuarios', id)
   
   const dadosLimpos = removeUndefined(payload)
@@ -59,15 +63,6 @@ export async function atualizarUsuarioApi(
     ...dadosLimpos,
     atualizadoEm: serverTimestamp()
   })
-
-  return {
-    id,
-    login: payload.login ?? '',
-    senhaHash: payload.senhaHash ?? '',
-    ...payload,
-    criadoEm: new Date().toISOString(),
-    atualizadoEm: new Date().toISOString()
-  } as Usuario
 }
 
 export async function removerUsuarioApi(id: string): Promise<void> {
