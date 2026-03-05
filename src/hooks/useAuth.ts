@@ -146,8 +146,11 @@ export function useAuth() {
     }
     
     try {
+      console.log('Enviando email de recuperação para:', email)
       await sendPasswordResetEmail(auth, email)
+      console.log('Email de recuperação enviado com sucesso')
     } catch (err: unknown) {
+      console.error('Erro ao enviar email de recuperação:', err)
       const errorMessage = getAuthErrorMessage(err)
       throw new Error(errorMessage)
     }
