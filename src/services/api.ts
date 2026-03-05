@@ -45,13 +45,7 @@ export async function criarUsuarioApi(payload: CriarUsuarioPayload): Promise<Usu
 
 export type AtualizarUsuarioPayload = Partial<
   Omit<Usuario, 'id' | 'criadoEm' | 'atualizadoEm'>
-> & {
-  nome: string
-  email: string
-  telefone: string
-  status: Usuario['status']
-  role: Usuario['role']
-}
+>
 
 export async function atualizarUsuarioApi(
   id: string,
@@ -105,7 +99,7 @@ export async function criarTarefaApi(payload: CriarTarefaPayload): Promise<Taref
   }
 }
 
-export type AtualizarTarefaPayload = Omit<Tarefa, 'id' | 'criadaEm'>
+export type AtualizarTarefaPayload = Partial<Omit<Tarefa, 'id' | 'criadaEm' | 'atualizadaEm'>>
 
 export async function atualizarTarefaApi(
   id: string,
