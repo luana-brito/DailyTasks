@@ -39,14 +39,15 @@ const normalizarTelefone = (valor: string) => valor.replace(/\D/g, '')
 function App() {
   useThemeInit()
   
-  const { 
-    usuario: usuarioLogado, 
-    loading: carregandoAuth, 
+const {
+    usuario: usuarioLogado,
+    loading: carregandoAuth,
     error: erroAuth,
     login,
     logout,
     criarUsuarioAuth,
-    alterarSenha
+    alterarSenha,
+    recuperarSenha
   } = useAuth()
   
   const { data: usuarios, loading: carregandoUsuarios, error: erroUsuarios } = useUsuarios()
@@ -516,7 +517,12 @@ function App() {
 
   if (!usuarioLogado) {
     return (
-      <LoginScreen onSubmit={handleLogin} carregando={processandoLogin} erro={erroLogin} />
+      <LoginScreen 
+        onSubmit={handleLogin} 
+        onRecuperarSenha={recuperarSenha}
+        carregando={processandoLogin} 
+        erro={erroLogin} 
+      />
     )
   }
 

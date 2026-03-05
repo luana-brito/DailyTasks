@@ -7,6 +7,7 @@ import {
   updatePassword,
   EmailAuthProvider,
   reauthenticateWithCredential,
+  sendPasswordResetEmail,
   type User
 } from 'firebase/auth'
 import { doc, getDoc } from 'firebase/firestore'
@@ -139,12 +140,26 @@ export function useAuth() {
     await updatePassword(user, novaSenha)
   }
 
+  const recuperarSenha = async (email: string) => {
+    if (!email.toLowerCase().endsWith('@saude.pe.gov.br')) {
+      throw new Error('Apenas e-mails @saude.pe.gov.br são permitidos.')
+    }
+    
+    try {
+      await sendPasswordResetEmail(auth, email)
+    } catch (err: unknown) {
+      const errorMessage = getAuthErrorMessage(err)
+      throw new Error(errorMessage)
+    }
+  }
+
   return {
     ...state,
     login,
     logout,
     criarUsuarioAuth,
-    alterarSenha
+    alterarSenha,
+    recuperarSenha
   }
 }
 
