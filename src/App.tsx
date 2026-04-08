@@ -9,6 +9,7 @@ import { TaskModal } from './components/TaskModal'
 import { TimeModal } from './components/TimeModal'
 import { ViewToggle, type ViewMode } from './components/ViewToggle'
 import { UserManagement } from './components/UserManagement'
+import { TarefasBackupToolbar } from './components/TarefasBackupToolbar'
 import { LoginScreen, type LoginCredenciais } from './components/LoginScreen'
 import { RegisterRequest } from './components/RegisterRequest'
 import { ThemeToggle, useThemeInit } from './components/ThemeToggle'
@@ -1012,16 +1013,18 @@ const {
           </nav>
 
           {abaAtiva === 'tarefas' && (
-            <button
-              type="button"
-              className="button primary"
-              onClick={() => setModalTarefa({ aberto: true, tarefa: null })}
-              style={{ marginLeft: 'auto' }}
-              aria-label="Nova tarefa"
-            >
-              <IconPlus size={18} />
-              <span>Nova Tarefa</span>
-            </button>
+            <div className="header-tarefas-actions">
+              {usuarioLogado.role === 'ADMIN' && <TarefasBackupToolbar />}
+              <button
+                type="button"
+                className="button primary"
+                onClick={() => setModalTarefa({ aberto: true, tarefa: null })}
+                aria-label="Nova tarefa"
+              >
+                <IconPlus size={18} />
+                <span>Nova Tarefa</span>
+              </button>
+            </div>
           )}
         </div>
       </header>

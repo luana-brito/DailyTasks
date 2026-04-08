@@ -1,5 +1,10 @@
-import { useState, type FormEvent } from 'react'
+import { useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import type { Produto, Executiva } from '../types'
+import {
+  exportProdutosBackupApi,
+  importProdutosBackupApi,
+  type ProdutosBackupPayload
+} from '../services/api'
 
 type SettingsPageProps = {
   produtos: Produto[]
@@ -30,6 +35,7 @@ export function SettingsPage({
   const [erro, setErro] = useState<string | null>(null)
   const [processando, setProcessando] = useState(false)
   const [modalAberto, setModalAberto] = useState(false)
+  const inputImportRef = useRef<HTMLInputElement>(null)
 
   const abrirModal = (produto?: Produto) => {
     if (produto) {
@@ -118,6 +124,68 @@ export function SettingsPage({
 
   const totalAtivos = produtos.filter(p => p.ativo).length
 
+  const handleExportarProdutos = async () => {
+    setErro(null)
+    setMensagem(null)
+    setProcessando(true)
+    try {
+      const data = await exportProdutosBackupApi()
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `produtos-dailytasks-${new Date().toISOString().slice(0, 10)}.json`
+      a.click()
+      URL.revokeObjectURL(url)
+      setMensagem('Produtos exportados. Use importação noutro ambiente para replicar a mesma lista.')
+    } catch (err) {
+      setErro(err instanceof Error ? err.message : 'Não foi possível exportar.')
+    } finally {
+      setProcessando(false)
+    }
+  }
+
+  const handleImportarProdutos = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    if (
+      !confirm(
+        'Importar produtos deste ficheiro?\n\n' +
+          '• Mesmo id = atualização.\n' +
+          '• Nomes duplicados (outro id) na base são rejeitados.\n' +
+          '• Importe utilizadores/tarefas noutro passo se necessário.'
+      )
+    ) {
+      return
+    }
+    setProcessando(true)
+    setErro(null)
+    setMensagem(null)
+    try {
+      const text = await file.text()
+      const parsed = JSON.parse(text) as unknown
+      let payload: ProdutosBackupPayload | { produtos: ProdutosBackupPayload['produtos'] }
+      if (Array.isArray(parsed)) {
+        payload = { produtos: parsed as ProdutosBackupPayload['produtos'] }
+      } else if (
+        parsed &&
+        typeof parsed === 'object' &&
+        Array.isArray((parsed as ProdutosBackupPayload).produtos)
+      ) {
+        payload = parsed as ProdutosBackupPayload
+      } else {
+        throw new Error('Formato inválido: esperado { produtos: [...] } ou um array.')
+      }
+      const res = await importProdutosBackupApi(payload)
+      setMensagem(`Importação concluída: ${res.imported} produto(s). A lista atualiza em segundos.`)
+    } catch (err) {
+      setErro(err instanceof Error ? err.message : 'Não foi possível importar.')
+    } finally {
+      setProcessando(false)
+    }
+  }
+
   return (
     <>
       <div className="user-management">
@@ -126,10 +194,45 @@ export function SettingsPage({
             <h3>Configurações</h3>
             <p>Gerencie os produtos disponíveis no sistema.</p>
           </div>
-          <button type="button" className="button primary" onClick={() => abrirModal()} disabled={processando}>
-            Novo produto
-          </button>
+          <div className="user-management-header-actions">
+            <button
+              type="button"
+              className="button secondary"
+              onClick={handleExportarProdutos}
+              disabled={processando}
+              title="Descarregar produtos em JSON"
+            >
+              Exportar JSON
+            </button>
+            <button
+              type="button"
+              className="button secondary"
+              onClick={() => inputImportRef.current?.click()}
+              disabled={processando}
+              title="Importar produtos a partir de JSON"
+            >
+              Importar JSON
+            </button>
+            <input
+              ref={inputImportRef}
+              type="file"
+              accept="application/json,.json"
+              className="sr-only"
+              aria-hidden
+              tabIndex={-1}
+              onChange={handleImportarProdutos}
+            />
+            <button type="button" className="button primary" onClick={() => abrirModal()} disabled={processando}>
+              Novo produto
+            </button>
+          </div>
         </header>
+
+        <p className="user-management-backup-hint">
+          <strong>Exportar / Importar</strong> copia produtos por <code>id</code> (inclui PESSOAL se estiver no
+          ficheiro). As tarefas usam o <strong>nome</strong> do produto como texto — mantenha nomes alinhados entre
+          ambientes.
+        </p>
 
         {mensagem && !modalAberto && <p className="form-success">{mensagem}</p>}
         {erro && !modalAberto && <p className="form-error">{erro}</p>}

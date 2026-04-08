@@ -171,6 +171,42 @@ export async function removerTarefaApi(id: string): Promise<void> {
   await apiFetch(`/api/tarefas/${encodeURIComponent(id)}`, { method: 'DELETE' })
 }
 
+export type TarefasBackupPayload = {
+  app: string
+  version: number
+  exportedAt: string
+  tarefas: Array<{
+    id: string
+    titulo: string
+    produto: string
+    status: string
+    prioridade: string
+    tempo_trabalhado_horas: number | null
+    observacoes: string | null
+    data: string
+    atribuido_ids: string
+    criado_por_id: string
+    parent_id: string | null
+    cronometro_segundos_acumulados: number | null
+    cronometro_inicio_em: string | null
+    criada_em: string
+    atualizada_em: string
+  }>
+}
+
+export async function exportTarefasBackupApi(): Promise<TarefasBackupPayload> {
+  return apiFetch<TarefasBackupPayload>('/api/tarefas/export')
+}
+
+export async function importTarefasBackupApi(
+  payload: TarefasBackupPayload | { tarefas: TarefasBackupPayload['tarefas'] }
+): Promise<{ ok: boolean; imported: number }> {
+  return apiFetch<{ ok: boolean; imported: number }>('/api/tarefas/import', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  })
+}
+
 // --- Produtos ---------------------------------------------------------------
 
 export type CriarProdutoPayload = Omit<Produto, 'id' | 'criadoEm' | 'atualizadoEm'>
@@ -193,6 +229,33 @@ export async function atualizarProdutoApi(id: string, payload: AtualizarProdutoP
 
 export async function removerProdutoApi(id: string): Promise<void> {
   await apiFetch(`/api/produtos/${encodeURIComponent(id)}`, { method: 'DELETE' })
+}
+
+export type ProdutosBackupPayload = {
+  app: string
+  version: number
+  exportedAt: string
+  produtos: Array<{
+    id: string
+    nome: string
+    executiva: string | null
+    ativo: number
+    criado_em: string
+    atualizado_em: string
+  }>
+}
+
+export async function exportProdutosBackupApi(): Promise<ProdutosBackupPayload> {
+  return apiFetch<ProdutosBackupPayload>('/api/produtos/export')
+}
+
+export async function importProdutosBackupApi(
+  payload: ProdutosBackupPayload | { produtos: ProdutosBackupPayload['produtos'] }
+): Promise<{ ok: boolean; imported: number }> {
+  return apiFetch<{ ok: boolean; imported: number }>('/api/produtos/import', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  })
 }
 
 // --- Solicitações -----------------------------------------------------------

@@ -65,6 +65,33 @@ async function bootstrapAdminIfEmpty(db) {
   console.log(`[bootstrap] Usuário admin criado: ${email}`)
 }
 
+const STATUS_TAREFA = new Set(['NOVO', 'EM ANDAMENTO', 'PAUSADO', 'CONCLUIDO'])
+const PRIORIDADE_TAREFA = new Set(['ALTA', 'MEDIA', 'BAIXA'])
+
+/** Ordena tarefas para import: pais antes de filhos dentro do ficheiro (DFS a partir das raízes). */
+function sortTarefasImportOrder(rows) {
+  const ids = new Set(rows.map((r) => r.id))
+  const childrenOf = new Map()
+  for (const r of rows) {
+    const p = r.parent_id && ids.has(r.parent_id) ? r.parent_id : '__root__'
+    if (!childrenOf.has(p)) childrenOf.set(p, [])
+    childrenOf.get(p).push(r)
+  }
+  const out = []
+  const walk = (parentKey) => {
+    for (const r of childrenOf.get(parentKey) || []) {
+      out.push(r)
+      walk(r.id)
+    }
+  }
+  walk('__root__')
+  const seen = new Set(out.map((x) => x.id))
+  for (const r of rows) {
+    if (!seen.has(r.id)) out.push(r)
+  }
+  return out
+}
+
 export async function createApp() {
   const db = await createDatabase()
   await bootstrapAdminIfEmpty(db)
@@ -86,7 +113,7 @@ export async function createApp() {
   } else {
     app.use(cors())
   }
-  app.use(express.json({ limit: '2mb' }))
+  app.use(express.json({ limit: '12mb' }))
 
   app.post(
     '/api/auth/login',
@@ -411,6 +438,89 @@ export async function createApp() {
     })
   )
 
+  app.get(
+    '/api/produtos/export',
+    authMiddleware,
+    requireAdmin(db),
+    ah(async (req, res) => {
+      const rows = await db.all('SELECT * FROM produtos ORDER BY nome', [])
+      res.json({
+        app: 'dailytasks-produtos',
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        produtos: rows.map((row) => ({
+          id: row.id,
+          nome: row.nome,
+          executiva: row.executiva,
+          ativo: row.ativo === 1 || row.ativo === true ? 1 : 0,
+          criado_em: row.criado_em,
+          atualizado_em: row.atualizado_em
+        }))
+      })
+    })
+  )
+
+  app.post(
+    '/api/produtos/import',
+    authMiddleware,
+    requireAdmin(db),
+    ah(async (req, res) => {
+      const body = req.body
+      let list = Array.isArray(body) ? body : body?.produtos
+      if (!Array.isArray(list) || list.length === 0) {
+        return res.status(400).json({ error: 'Envie { produtos: [...] } ou um array.' })
+      }
+
+      const normalized = []
+      const nomesSeen = new Set()
+      const ex = db.isPostgres ? 'EXCLUDED' : 'excluded'
+
+      for (let i = 0; i < list.length; i++) {
+        const p = list[i]
+        const id = String(p?.id || '').trim()
+        const nome = String(p?.nome || '').trim()
+        const executiva = p?.executiva != null && String(p.executiva).trim() ? String(p.executiva).trim() : null
+        const ativo = p?.ativo === false || p?.ativo === 0 ? 0 : 1
+        const criado_em = String(p?.criado_em || '').trim() || new Date().toISOString()
+        const atualizado_em = String(p?.atualizado_em || '').trim() || new Date().toISOString()
+
+        if (!id || !nome) {
+          return res.status(400).json({ error: `Produto linha ${i + 1}: id e nome são obrigatórios.` })
+        }
+        const nomeKey = nome.toUpperCase()
+        if (nomesSeen.has(nomeKey)) {
+          return res.status(400).json({ error: `Nome de produto duplicado no ficheiro: ${nome}` })
+        }
+        nomesSeen.add(nomeKey)
+        normalized.push({ id, nome, executiva, ativo, criado_em, atualizado_em })
+      }
+
+      for (const u of normalized) {
+        const clash = await db.get(
+          'SELECT id FROM produtos WHERE upper(trim(nome)) = upper(trim(?)) AND id != ?',
+          [u.nome, u.id]
+        )
+        if (clash) {
+          return res.status(409).json({ error: `Já existe produto com o nome "${u.nome}" (outro id).` })
+        }
+        const ativoArg = db.isPostgres ? u.ativo === 1 : u.ativo
+        await db.run(
+          `INSERT INTO produtos (id, nome, executiva, ativo, criado_em, atualizado_em)
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT (id) DO UPDATE SET
+             nome = ${ex}.nome,
+             executiva = ${ex}.executiva,
+             ativo = ${ex}.ativo,
+             criado_em = ${ex}.criado_em,
+             atualizado_em = ${ex}.atualizado_em`,
+          [u.id, u.nome, u.executiva, ativoArg, u.criado_em, u.atualizado_em]
+        )
+      }
+
+      res.json({ ok: true, imported: normalized.length })
+    })
+  )
+
   app.post(
     '/api/produtos',
     authMiddleware,
@@ -483,6 +593,183 @@ export async function createApp() {
     ah(async (req, res) => {
       const rows = await db.all('SELECT * FROM tarefas', [])
       res.json(rows.map(rowToTarefa))
+    })
+  )
+
+  app.get(
+    '/api/tarefas/export',
+    authMiddleware,
+    requireAdmin(db),
+    ah(async (req, res) => {
+      const rows = await db.all('SELECT * FROM tarefas', [])
+      res.json({
+        app: 'dailytasks-tarefas',
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        tarefas: rows.map((row) => ({
+          id: row.id,
+          titulo: row.titulo,
+          produto: row.produto,
+          status: row.status,
+          prioridade: row.prioridade,
+          tempo_trabalhado_horas: row.tempo_trabalhado_horas,
+          observacoes: row.observacoes,
+          data: row.data,
+          atribuido_ids: row.atribuido_ids,
+          criado_por_id: row.criado_por_id,
+          parent_id: row.parent_id,
+          cronometro_segundos_acumulados: row.cronometro_segundos_acumulados,
+          cronometro_inicio_em: row.cronometro_inicio_em,
+          criada_em: row.criada_em,
+          atualizada_em: row.atualizada_em
+        }))
+      })
+    })
+  )
+
+  app.post(
+    '/api/tarefas/import',
+    authMiddleware,
+    requireAdmin(db),
+    ah(async (req, res) => {
+      const body = req.body
+      let list = Array.isArray(body) ? body : body?.tarefas
+      if (!Array.isArray(list) || list.length === 0) {
+        return res.status(400).json({ error: 'Envie { tarefas: [...] } ou um array.' })
+      }
+
+      const idsFile = new Set()
+      const normalized = []
+
+      for (let i = 0; i < list.length; i++) {
+        const t = list[i]
+        const id = String(t?.id || '').trim()
+        if (!id) {
+          return res.status(400).json({ error: `Tarefa linha ${i + 1}: id é obrigatório.` })
+        }
+        if (idsFile.has(id)) {
+          return res.status(400).json({ error: `id duplicado no ficheiro: ${id}` })
+        }
+        idsFile.add(id)
+
+        const titulo = String(t?.titulo ?? '')
+        const produto = String(t?.produto ?? '')
+        const status = String(t?.status || 'NOVO')
+        const prioridade = String(t?.prioridade || 'MEDIA')
+        if (!STATUS_TAREFA.has(status)) {
+          return res.status(400).json({ error: `Tarefa ${id}: status inválido.` })
+        }
+        if (!PRIORIDADE_TAREFA.has(prioridade)) {
+          return res.status(400).json({ error: `Tarefa ${id}: prioridade inválida.` })
+        }
+
+        const data = String(t?.data || '').trim()
+        if (!data) {
+          return res.status(400).json({ error: `Tarefa ${id}: data é obrigatória.` })
+        }
+
+        let atribuidoIdsStr = t?.atribuido_ids
+        if (atribuidoIdsStr == null && Array.isArray(t?.atribuidoIds)) {
+          atribuidoIdsStr = JSON.stringify(t.atribuidoIds)
+        }
+        atribuidoIdsStr = String(atribuidoIdsStr ?? '[]')
+        try {
+          const parsed = JSON.parse(atribuidoIdsStr)
+          if (!Array.isArray(parsed)) throw new Error('no array')
+        } catch {
+          return res.status(400).json({ error: `Tarefa ${id}: atribuido_ids deve ser JSON array (string).` })
+        }
+
+        const criado_por_id = String(t?.criado_por_id ?? '').trim()
+        if (!criado_por_id) {
+          return res.status(400).json({ error: `Tarefa ${id}: criado_por_id é obrigatório.` })
+        }
+
+        const criada_em = String(t?.criada_em || '').trim() || new Date().toISOString()
+        const atualizada_em = String(t?.atualizada_em || '').trim() || new Date().toISOString()
+
+        const tempo_trabalhado_horas =
+          t?.tempo_trabalhado_horas != null && t.tempo_trabalhado_horas !== ''
+            ? Number(t.tempo_trabalhado_horas)
+            : null
+        const observacoes = t?.observacoes != null ? String(t.observacoes) : null
+        const parent_id = t?.parent_id != null && String(t.parent_id).trim() ? String(t.parent_id).trim() : null
+        const cronometro_segundos_acumulados =
+          t?.cronometro_segundos_acumulados != null && t.cronometro_segundos_acumulados !== ''
+            ? Number(t.cronometro_segundos_acumulados)
+            : null
+        const cronometro_inicio_em =
+          t?.cronometro_inicio_em != null && String(t.cronometro_inicio_em).trim()
+            ? String(t.cronometro_inicio_em).trim()
+            : null
+
+        normalized.push({
+          id,
+          titulo,
+          produto,
+          status,
+          prioridade,
+          tempo_trabalhado_horas: Number.isFinite(tempo_trabalhado_horas) ? tempo_trabalhado_horas : null,
+          observacoes,
+          data,
+          atribuido_ids: atribuidoIdsStr,
+          criado_por_id,
+          parent_id,
+          cronometro_segundos_acumulados: Number.isFinite(cronometro_segundos_acumulados)
+            ? cronometro_segundos_acumulados
+            : null,
+          cronometro_inicio_em,
+          criada_em,
+          atualizada_em
+        })
+      }
+
+      const ordered = sortTarefasImportOrder(normalized)
+      const ex = db.isPostgres ? 'EXCLUDED' : 'excluded'
+
+      for (const r of ordered) {
+        await db.run(
+          `INSERT INTO tarefas (
+            id, titulo, produto, status, prioridade, tempo_trabalhado_horas, observacoes, data,
+            atribuido_ids, criado_por_id, parent_id, cronometro_segundos_acumulados, cronometro_inicio_em,
+            criada_em, atualizada_em
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT (id) DO UPDATE SET
+            titulo = ${ex}.titulo,
+            produto = ${ex}.produto,
+            status = ${ex}.status,
+            prioridade = ${ex}.prioridade,
+            tempo_trabalhado_horas = ${ex}.tempo_trabalhado_horas,
+            observacoes = ${ex}.observacoes,
+            data = ${ex}.data,
+            atribuido_ids = ${ex}.atribuido_ids,
+            criado_por_id = ${ex}.criado_por_id,
+            parent_id = ${ex}.parent_id,
+            cronometro_segundos_acumulados = ${ex}.cronometro_segundos_acumulados,
+            cronometro_inicio_em = ${ex}.cronometro_inicio_em,
+            criada_em = ${ex}.criada_em,
+            atualizada_em = ${ex}.atualizada_em`,
+          [
+            r.id,
+            r.titulo,
+            r.produto,
+            r.status,
+            r.prioridade,
+            r.tempo_trabalhado_horas,
+            r.observacoes,
+            r.data,
+            r.atribuido_ids,
+            r.criado_por_id,
+            r.parent_id,
+            r.cronometro_segundos_acumulados,
+            r.cronometro_inicio_em,
+            r.criada_em,
+            r.atualizada_em
+          ]
+        )
+      }
+
+      res.json({ ok: true, imported: normalized.length })
     })
   )
 

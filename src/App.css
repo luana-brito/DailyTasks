@@ -75,6 +75,14 @@
   width: 100%;
 }
 
+.header-tarefas-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
 .main-nav {
   display: flex;
   gap: 0.25rem;
