@@ -232,12 +232,30 @@ export async function createApp() {
         })
       }
 
-      const existing = await db.all('SELECT * FROM users', [])
-      const byId = Object.fromEntries(existing.map((r) => [r.id, { ...r }]))
+      const existingUsers = await db.all('SELECT * FROM users', [])
+      const state = new Map(existingUsers.map((r) => [r.id, { ...r }]))
       for (const u of normalized) {
-        byId[u.id] = { ...u }
+        const owner = [...state.values()].find(
+          (r) => String(r.email).toLowerCase() === u.email.toLowerCase()
+        )
+        if (owner && owner.id !== u.id) {
+          state.set(owner.id, {
+            id: owner.id,
+            login: u.login,
+            email: u.email,
+            password_hash: u.password_hash,
+            nome: u.nome,
+            telefone: u.telefone,
+            status: u.status,
+            role: u.role,
+            criado_em: u.criado_em,
+            atualizado_em: u.atualizado_em
+          })
+        } else {
+          state.set(u.id, { ...u })
+        }
       }
-      const activeAdmins = Object.values(byId).filter((r) => r.role === 'ADMIN' && r.status === 'ATIVO').length
+      const activeAdmins = [...state.values()].filter((r) => r.role === 'ADMIN' && r.status === 'ATIVO').length
       if (activeAdmins < 1) {
         return res.status(400).json({
           error: 'O resultado teria zero administradores ativos. Corrija o ficheiro antes de importar.'
@@ -245,45 +263,61 @@ export async function createApp() {
       }
 
       const ex = db.isPostgres ? 'EXCLUDED' : 'excluded'
+      let sobrescritosPorEmail = 0
       for (const u of normalized) {
-        const clash = await db.get('SELECT id FROM users WHERE lower(email) = lower(?) AND id != ?', [
-          u.email,
-          u.id
-        ])
-        if (clash) {
-          return res.status(409).json({
-            error: `E-mail ${u.email} já pertence a outro utilizador (id diferente).`
-          })
+        const existingByEmail = await db.get('SELECT id FROM users WHERE lower(email) = lower(?)', [u.email])
+        if (existingByEmail && existingByEmail.id !== u.id) {
+          sobrescritosPorEmail++
+          await db.run(
+            `UPDATE users SET login = ?, email = ?, password_hash = ?, nome = ?, telefone = ?, status = ?, role = ?, criado_em = ?, atualizado_em = ? WHERE id = ?`,
+            [
+              u.login,
+              u.email,
+              u.password_hash,
+              u.nome,
+              u.telefone,
+              u.status,
+              u.role,
+              u.criado_em,
+              u.atualizado_em,
+              existingByEmail.id
+            ]
+          )
+        } else {
+          await db.run(
+            `INSERT INTO users (id, login, email, password_hash, nome, telefone, status, role, criado_em, atualizado_em)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT (id) DO UPDATE SET
+               login = ${ex}.login,
+               email = ${ex}.email,
+               password_hash = ${ex}.password_hash,
+               nome = ${ex}.nome,
+               telefone = ${ex}.telefone,
+               status = ${ex}.status,
+               role = ${ex}.role,
+               criado_em = ${ex}.criado_em,
+               atualizado_em = ${ex}.atualizado_em`,
+            [
+              u.id,
+              u.login,
+              u.email,
+              u.password_hash,
+              u.nome,
+              u.telefone,
+              u.status,
+              u.role,
+              u.criado_em,
+              u.atualizado_em
+            ]
+          )
         }
-        await db.run(
-          `INSERT INTO users (id, login, email, password_hash, nome, telefone, status, role, criado_em, atualizado_em)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-           ON CONFLICT (id) DO UPDATE SET
-             login = ${ex}.login,
-             email = ${ex}.email,
-             password_hash = ${ex}.password_hash,
-             nome = ${ex}.nome,
-             telefone = ${ex}.telefone,
-             status = ${ex}.status,
-             role = ${ex}.role,
-             criado_em = ${ex}.criado_em,
-             atualizado_em = ${ex}.atualizado_em`,
-          [
-            u.id,
-            u.login,
-            u.email,
-            u.password_hash,
-            u.nome,
-            u.telefone,
-            u.status,
-            u.role,
-            u.criado_em,
-            u.atualizado_em
-          ]
-        )
       }
 
-      res.json({ ok: true, imported: normalized.length })
+      res.json({
+        ok: true,
+        imported: normalized.length,
+        sobrescritosPorEmail
+      })
     })
   )
 
@@ -495,29 +529,40 @@ export async function createApp() {
         normalized.push({ id, nome, executiva, ativo, criado_em, atualizado_em })
       }
 
+      let sobrescritosPorNome = 0
       for (const u of normalized) {
-        const clash = await db.get(
+        const mesmoNome = await db.get(
           'SELECT id FROM produtos WHERE upper(trim(nome)) = upper(trim(?)) AND id != ?',
           [u.nome, u.id]
         )
-        if (clash) {
-          return res.status(409).json({ error: `Já existe produto com o nome "${u.nome}" (outro id).` })
+        if (mesmoNome) {
+          sobrescritosPorNome++
+          const ativoArg = db.isPostgres ? u.ativo === 1 : u.ativo
+          await db.run(
+            `UPDATE produtos SET nome = ?, executiva = ?, ativo = ?, criado_em = ?, atualizado_em = ? WHERE id = ?`,
+            [u.nome, u.executiva, ativoArg, u.criado_em, u.atualizado_em, mesmoNome.id]
+          )
+        } else {
+          const ativoArg = db.isPostgres ? u.ativo === 1 : u.ativo
+          await db.run(
+            `INSERT INTO produtos (id, nome, executiva, ativo, criado_em, atualizado_em)
+             VALUES (?, ?, ?, ?, ?, ?)
+             ON CONFLICT (id) DO UPDATE SET
+               nome = ${ex}.nome,
+               executiva = ${ex}.executiva,
+               ativo = ${ex}.ativo,
+               criado_em = ${ex}.criado_em,
+               atualizado_em = ${ex}.atualizado_em`,
+            [u.id, u.nome, u.executiva, ativoArg, u.criado_em, u.atualizado_em]
+          )
         }
-        const ativoArg = db.isPostgres ? u.ativo === 1 : u.ativo
-        await db.run(
-          `INSERT INTO produtos (id, nome, executiva, ativo, criado_em, atualizado_em)
-           VALUES (?, ?, ?, ?, ?, ?)
-           ON CONFLICT (id) DO UPDATE SET
-             nome = ${ex}.nome,
-             executiva = ${ex}.executiva,
-             ativo = ${ex}.ativo,
-             criado_em = ${ex}.criado_em,
-             atualizado_em = ${ex}.atualizado_em`,
-          [u.id, u.nome, u.executiva, ativoArg, u.criado_em, u.atualizado_em]
-        )
       }
 
-      res.json({ ok: true, imported: normalized.length })
+      res.json({
+        ok: true,
+        imported: normalized.length,
+        sobrescritosPorNome
+      })
     })
   )
 

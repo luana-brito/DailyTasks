@@ -126,11 +126,14 @@ export async function exportUsuariosBackupApi(): Promise<UsuariosBackupPayload> 
 
 export async function importUsuariosBackupApi(
   payload: UsuariosBackupPayload | { users: UsuariosBackupPayload['users'] }
-): Promise<{ ok: boolean; imported: number }> {
-  return apiFetch<{ ok: boolean; imported: number }>('/api/usuarios/import', {
-    method: 'POST',
-    body: JSON.stringify(payload)
-  })
+): Promise<{ ok: boolean; imported: number; sobrescritosPorEmail?: number }> {
+  return apiFetch<{ ok: boolean; imported: number; sobrescritosPorEmail?: number }>(
+    '/api/usuarios/import',
+    {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    }
+  )
 }
 
 // --- Tarefas ----------------------------------------------------------------
@@ -251,11 +254,14 @@ export async function exportProdutosBackupApi(): Promise<ProdutosBackupPayload> 
 
 export async function importProdutosBackupApi(
   payload: ProdutosBackupPayload | { produtos: ProdutosBackupPayload['produtos'] }
-): Promise<{ ok: boolean; imported: number }> {
-  return apiFetch<{ ok: boolean; imported: number }>('/api/produtos/import', {
-    method: 'POST',
-    body: JSON.stringify(payload)
-  })
+): Promise<{ ok: boolean; imported: number; sobrescritosPorNome?: number }> {
+  return apiFetch<{ ok: boolean; imported: number; sobrescritosPorNome?: number }>(
+    '/api/produtos/import',
+    {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    }
+  )
 }
 
 // --- Solicitações -----------------------------------------------------------

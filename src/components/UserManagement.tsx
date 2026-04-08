@@ -299,7 +299,13 @@ export function UserManagement({
         throw new Error('Formato inválido: esperado { users: [...] } ou um array de utilizadores.')
       }
       const res = await importUsuariosBackupApi(payload)
-      setMensagem(`Importação concluída: ${res.imported} utilizador(es) processado(s). A lista atualiza em segundos.`)
+      const extra =
+        res.sobrescritosPorEmail && res.sobrescritosPorEmail > 0
+          ? ` (${res.sobrescritosPorEmail} registo(s) existente(s) atualizado(s) pelo mesmo e-mail.)`
+          : ''
+      setMensagem(
+        `Importação concluída: ${res.imported} utilizador(es) processado(s).${extra} A lista atualiza em segundos.`
+      )
     } catch (err) {
       setErro(err instanceof Error ? err.message : 'Não foi possível importar.')
     } finally {

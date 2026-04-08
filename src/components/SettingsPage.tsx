@@ -178,7 +178,11 @@ export function SettingsPage({
         throw new Error('Formato inválido: esperado { produtos: [...] } ou um array.')
       }
       const res = await importProdutosBackupApi(payload)
-      setMensagem(`Importação concluída: ${res.imported} produto(s). A lista atualiza em segundos.`)
+      const extra =
+        res.sobrescritosPorNome && res.sobrescritosPorNome > 0
+          ? ` (${res.sobrescritosPorNome} registo(s) existente(s) atualizado(s) pelo mesmo nome.)`
+          : ''
+      setMensagem(`Importação concluída: ${res.imported} produto(s).${extra} A lista atualiza em segundos.`)
     } catch (err) {
       setErro(err instanceof Error ? err.message : 'Não foi possível importar.')
     } finally {
