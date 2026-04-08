@@ -179,6 +179,34 @@ Sem `DATABASE_URL`, o script usa **SQLite local** (`server/database.sqlite`), n�
 
 ---
 
+## Dados em produção vazios (utilizadores / tarefas do PC não aparecem)
+
+Isto é **normal**: em desenvolvimento a app usa **`server/database.sqlite`** no teu computador. Na Vercel a app usa apenas o **PostgreSQL** da variável **`DATABASE_URL`** — é outra base, independente, que começa vazia (salvo o admin criado automaticamente).
+
+Para **copiar** tudo do SQLite local para o Postgres de produção:
+
+1. No painel Neon (ou outro), copia a **mesma** `DATABASE_URL` que está na Vercel.
+2. Na tua máquina, na pasta do projeto:
+
+   **PowerShell:**
+
+   ```powershell
+   $env:DATABASE_URL = "postgresql://..."   # cola a URI de produção
+   cd server
+   npm install
+   npm run migrate:sqlite-to-pg
+   ```
+
+   **Ou a partir da raiz do repo:** `npm run migrate:sqlite-to-pg` (com `DATABASE_URL` definida no ambiente).
+
+3. Opcional: `SOURCE_SQLITE_PATH` se o teu `.sqlite` não for `server/database.sqlite`.
+
+4. Abre o site em produção e faz login com as **mesmas credenciais** que usavas no PC (os hashes de senha são copiados).
+
+Se der erro de **e-mail duplicado** (`UNIQUE`), o Postgres já tinha um utilizador com o mesmo e-mail que um registo do SQLite (ex.: dois admins). Apaga ou altera um dos lados e volta a correr o comando.
+
+---
+
 ## Resumo rápido (checklist)
 
 - [ ] Postgres criado (ex.: Neon) e URI copiada  

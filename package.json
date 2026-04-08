@@ -10,6 +10,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
+    "migrate:sqlite-to-pg": "node server/scripts/copy-sqlite-to-postgres.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

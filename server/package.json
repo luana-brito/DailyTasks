@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "node --watch src/index.js",
     "start": "node src/index.js",
-    "import-firestore": "node scripts/import-firestore-json.mjs"
+    "import-firestore": "node scripts/import-firestore-json.mjs",
+    "migrate:sqlite-to-pg": "node scripts/copy-sqlite-to-postgres.mjs"
   },
   "dependencies": {
     "@libsql/client": "^0.14.0",
