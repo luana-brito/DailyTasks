@@ -39,7 +39,7 @@ export type ResultadoMudancaStatusCronometro = {
     Tarefa,
     'status' | 'cronometroSegundosAcumulados' | 'cronometroInicioEm' | 'tempoTrabalhadoHoras'
   >
-  /** Remover campo cronometroInicioEm no Firestore */
+  /** Remover campo cronometroInicioEm na API / banco */
   removerCronometroInicio: boolean
 }
 

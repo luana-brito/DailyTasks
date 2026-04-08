@@ -12,6 +12,14 @@ dist
 dist-ssr
 *.local
 
+server/database.sqlite
+server/database.sqlite-shm
+server/database.sqlite-wal
+
+**/firebase-adminsdk*.json
+**/*service-account*.json
+firestore-backup.json
+
 # Environment variables (contém credenciais)
 .env
 .env.local

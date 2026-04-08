@@ -25,10 +25,10 @@ import {
 import type { Executiva, Filtros, Status, Tarefa, Usuario, UsuarioRole, SolicitacaoCadastro } from './types'
 import { truncarTituloTarefa } from './types'
 import { enviarMensagemSms } from './utils/sms'
-import { useUsuarios, useTarefas, useProdutos, useSolicitacoesCadastro } from './hooks/useFirestore'
+import { useUsuarios, useTarefas, useProdutos, useSolicitacoesCadastro } from './hooks/useApiCollections'
 import { useAuth } from './hooks/useAuth'
 import {
-  criarUsuarioFirestore,
+  criarUsuarioApi,
   atualizarUsuarioApi,
   removerUsuarioApi,
   criarTarefaApi,
@@ -82,15 +82,18 @@ const {
     error: erroAuth,
     login,
     logout,
-    criarUsuarioAuth,
+    refreshUsuario,
     alterarSenha,
     recuperarSenha
   } = useAuth()
-  
-  const { data: usuarios, loading: carregandoUsuarios, error: erroUsuarios } = useUsuarios()
-  const { data: tarefas, loading: carregandoTarefas, error: erroTarefas } = useTarefas()
-  const { data: produtos, loading: carregandoProdutos, error: erroProdutos } = useProdutos()
-  const { data: solicitacoes, loading: carregandoSolicitacoes, error: erroSolicitacoes } = useSolicitacoesCadastro()
+
+  const { data: usuarios, loading: carregandoUsuarios, error: erroUsuarios } =
+    useUsuarios(usuarioLogado)
+  const { data: tarefas, loading: carregandoTarefas, error: erroTarefas } = useTarefas(usuarioLogado)
+  const { data: produtos, loading: carregandoProdutos, error: erroProdutos } =
+    useProdutos(usuarioLogado)
+  const { data: solicitacoes, loading: carregandoSolicitacoes, error: erroSolicitacoes } =
+    useSolicitacoesCadastro(usuarioLogado)
   
   const produtoPessoalRef = useRef(false)
   
@@ -333,15 +336,14 @@ const {
       throw new Error('A senha deve ter pelo menos 6 caracteres.')
     }
 
-    const uid = await criarUsuarioAuth(dados.email.trim(), dados.senha)
-
-    await criarUsuarioFirestore(uid, {
+    await criarUsuarioApi({
       login: dados.email.trim(),
       nome: dados.nome.trim(),
       email: dados.email.trim(),
       telefone: telefoneNormalizado,
       status: dados.status,
-      role: dados.role
+      role: dados.role,
+      password: dados.senha
     })
   }
 
@@ -376,12 +378,16 @@ const {
       throw new Error('Informe um telefone válido com DDD (ex.: 5511999999999).')
     }
 
-    await atualizarUsuarioApi(usuarioExistente.id, {
+    const patch: Parameters<typeof atualizarUsuarioApi>[1] = {
       nome: dados.nome.trim(),
       telefone: telefoneNormalizado,
       status: dados.status,
       role: dados.role
-    })
+    }
+    if (dados.senha?.trim()) {
+      patch.password = dados.senha.trim()
+    }
+    await atualizarUsuarioApi(usuarioExistente.id, patch)
 
     if (usuarioLogado?.id === id && dados.status !== 'ATIVO') {
       handleLogout()
@@ -410,6 +416,7 @@ const {
       nome: dados.nome.trim(),
       telefone: telefoneNormalizado
     })
+    await refreshUsuario()
   }
 
   const handleExcluirUsuario = async (id: string) => {
@@ -475,15 +482,14 @@ const {
       throw new Error('Já existe um usuário com este e-mail.')
     }
 
-    const uid = await criarUsuarioAuth(solicitacao.email, senha)
-
-    await criarUsuarioFirestore(uid, {
+    await criarUsuarioApi({
       login: solicitacao.email,
       nome: solicitacao.nome,
       email: solicitacao.email,
-      telefone: solicitacao.telefone,
+      telefone: String(solicitacao.telefone).replace(/\D/g, ''),
       status: 'ATIVO',
-      role: 'USUARIO'
+      role: 'USUARIO',
+      password: senha
     })
 
     await atualizarSolicitacaoApi(solicitacao.id, 'APROVADO')

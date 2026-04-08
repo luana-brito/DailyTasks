@@ -26,8 +26,9 @@ class RaizErrorBoundary extends Component<{ children: ReactNode }, { mensagem: s
           <div className="loading-card">
             <p style={{ marginBottom: '1rem' }}>{this.state.mensagem}</p>
             <p style={{ fontSize: '0.875rem', opacity: 0.85, marginBottom: '1rem' }}>
-              Abra o console do navegador (F12) para mais detalhes. Se faltar configuração do Firebase,
-              copie <code>.env.example</code> para <code>.env</code> na pasta do projeto.
+              Abra o console do navegador (F12) para mais detalhes. Confira se a API está rodando na
+              pasta <code>server</code> (<code>npm run dev</code>) e se <code>VITE_API_URL</code> em{' '}
+              <code>.env</code> aponta para ela.
             </p>
             <button className="button primary" type="button" onClick={() => window.location.reload()}>
               Recarregar

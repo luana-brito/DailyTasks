@@ -1,21 +1,8 @@
-import { useEffect, useState } from 'react'
-import {
-  onAuthStateChanged,
-  signInWithEmailAndPassword,
-  signOut,
-  createUserWithEmailAndPassword,
-  updatePassword,
-  EmailAuthProvider,
-  reauthenticateWithCredential,
-  sendPasswordResetEmail,
-  type User
-} from 'firebase/auth'
-import { doc, getDoc } from 'firebase/firestore'
-import { auth, db, firebaseInitError } from '../services/firebase'
+import { useEffect, useState, useCallback } from 'react'
+import { meApi, loginApi, setAuthToken, atualizarUsuarioApi } from '../services/api'
 import type { Usuario } from '../types'
 
 interface AuthState {
-  firebaseUser: User | null
   usuario: Usuario | null
   loading: boolean
   error: string | null
@@ -23,185 +10,94 @@ interface AuthState {
 
 export function useAuth() {
   const [state, setState] = useState<AuthState>({
-    firebaseUser: null,
     usuario: null,
     loading: true,
     error: null
   })
 
   useEffect(() => {
-    const firebaseAuth = auth
-    const firestore = db
+    let cancel = false
 
-    if (!firebaseAuth || !firestore) {
-      setState({
-        firebaseUser: null,
-        usuario: null,
-        loading: false,
-        error: firebaseInitError ?? 'Firebase indisponível.'
-      })
-      return
-    }
+    async function init() {
+      const token = localStorage.getItem('dailytasks_token')
+      if (!token) {
+        setState({ usuario: null, loading: false, error: null })
+        return
+      }
 
-    const unsubscribe = onAuthStateChanged(firebaseAuth, async (firebaseUser) => {
-      if (firebaseUser) {
-        try {
-          const userDoc = await getDoc(doc(firestore, 'usuarios', firebaseUser.uid))
-          if (userDoc.exists()) {
-            const userData = userDoc.data()
-            const usuario: Usuario = {
-              id: firebaseUser.uid,
-              login: userData.login ?? firebaseUser.email ?? '',
-              nome: userData.nome ?? '',
-              email: firebaseUser.email ?? '',
-              telefone: userData.telefone ?? '',
-              status: userData.status ?? 'ATIVO',
-              role: userData.role ?? 'USUARIO',
-              criadoEm: userData.criadoEm?.toDate?.()?.toISOString() ?? new Date().toISOString(),
-              atualizadoEm: userData.atualizadoEm?.toDate?.()?.toISOString() ?? new Date().toISOString()
-            }
-
-            if (usuario.status !== 'ATIVO') {
-              await signOut(firebaseAuth)
-              setState({
-                firebaseUser: null,
-                usuario: null,
-                loading: false,
-                error: 'Usuário inativo. Contate o administrador.'
-              })
-              return
-            }
-
-            setState({
-              firebaseUser,
-              usuario,
-              loading: false,
-              error: null
-            })
-          } else {
-            await signOut(firebaseAuth)
-            setState({
-              firebaseUser: null,
-              usuario: null,
-              loading: false,
-              error: 'Usuário não encontrado no sistema.'
-            })
-          }
-        } catch (err) {
-          console.error('Erro ao carregar dados do usuário:', err)
+      try {
+        const usuario = await meApi()
+        if (!cancel) setState({ usuario, loading: false, error: null })
+      } catch {
+        setAuthToken(null)
+        if (!cancel) {
           setState({
-            firebaseUser,
             usuario: null,
             loading: false,
-            error: 'Erro ao carregar dados do usuário.'
+            error: null
           })
         }
-      } else {
-        setState({
-          firebaseUser: null,
-          usuario: null,
-          loading: false,
-          error: null
-        })
       }
-    })
+    }
 
-    return () => unsubscribe()
+    init()
+    return () => {
+      cancel = true
+    }
   }, [])
 
-  const login = async (email: string, senha: string) => {
-    if (!auth) {
-      const msg = firebaseInitError ?? 'Firebase não configurado.'
+  const login = useCallback(async (email: string, senha: string) => {
+    setState((prev) => ({ ...prev, loading: true, error: null }))
+    try {
+      const { token, user } = await loginApi(email, senha)
+      setAuthToken(token)
+      setState({ usuario: user, loading: false, error: null })
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Não foi possível realizar o login.'
       setState((prev) => ({ ...prev, loading: false, error: msg }))
       throw new Error(msg)
     }
+  }, [])
 
-    setState((prev) => ({ ...prev, loading: true, error: null }))
-    
+  const logout = useCallback(async () => {
+    setAuthToken(null)
+    setState({ usuario: null, loading: false, error: null })
+  }, [])
+
+  const refreshUsuario = useCallback(async () => {
+    if (!localStorage.getItem('dailytasks_token')) return
     try {
-      await signInWithEmailAndPassword(auth, email, senha)
-    } catch (err: unknown) {
-      const errorMessage = getAuthErrorMessage(err)
-      setState((prev) => ({ ...prev, loading: false, error: errorMessage }))
-      throw new Error(errorMessage)
+      const usuario = await meApi()
+      setState((prev) => ({ ...prev, usuario }))
+    } catch {
+      setAuthToken(null)
+      setState({ usuario: null, loading: false, error: null })
     }
-  }
+  }, [])
 
-  const logout = async () => {
-    if (!auth) return
-    await signOut(auth)
-    setState({
-      firebaseUser: null,
-      usuario: null,
-      loading: false,
-      error: null
+  const alterarSenha = useCallback(async (senhaAtual: string, novaSenha: string) => {
+    const u = state.usuario
+    if (!u) throw new Error('Usuário não autenticado.')
+    await atualizarUsuarioApi(u.id, {
+      currentPassword: senhaAtual,
+      password: novaSenha
     })
-  }
+  }, [state.usuario])
 
-  const criarUsuarioAuth = async (email: string, senha: string): Promise<string> => {
-    if (!auth) throw new Error(firebaseInitError ?? 'Firebase não configurado.')
-    const userCredential = await createUserWithEmailAndPassword(auth, email, senha)
-    return userCredential.user.uid
-  }
-
-  const alterarSenha = async (senhaAtual: string, novaSenha: string) => {
-    if (!auth) throw new Error(firebaseInitError ?? 'Firebase não configurado.')
-    const user = auth.currentUser
-    if (!user || !user.email) {
-      throw new Error('Usuário não autenticado')
-    }
-
-    const credential = EmailAuthProvider.credential(user.email, senhaAtual)
-    await reauthenticateWithCredential(user, credential)
-    await updatePassword(user, novaSenha)
-  }
-
-  const recuperarSenha = async (email: string) => {
-    if (!auth) throw new Error(firebaseInitError ?? 'Firebase não configurado.')
-    try {
-      console.log('Enviando email de recuperação para:', email)
-      await sendPasswordResetEmail(auth, email)
-      console.log('Email de recuperação enviado com sucesso')
-    } catch (err: unknown) {
-      console.error('Erro ao enviar email de recuperação:', err)
-      const errorMessage = getAuthErrorMessage(err)
-      throw new Error(errorMessage)
-    }
-  }
+  const recuperarSenha = useCallback(async (_email: string) => {
+    throw new Error(
+      'A recuperação automática por e-mail não está disponível com o banco local. Peça a um administrador para redefinir sua senha na gestão de usuários.'
+    )
+  }, [])
 
   return {
-    ...state,
+    usuario: state.usuario,
+    loading: state.loading,
+    error: state.error,
     login,
     logout,
-    criarUsuarioAuth,
+    refreshUsuario,
     alterarSenha,
     recuperarSenha
   }
-}
-
-function getAuthErrorMessage(err: unknown): string {
-  if (err && typeof err === 'object' && 'code' in err) {
-    const code = (err as { code: string }).code
-    switch (code) {
-      case 'auth/invalid-email':
-        return 'E-mail inválido.'
-      case 'auth/user-disabled':
-        return 'Usuário desativado.'
-      case 'auth/user-not-found':
-        return 'Usuário não encontrado.'
-      case 'auth/wrong-password':
-        return 'Senha incorreta.'
-      case 'auth/invalid-credential':
-        return 'E-mail ou senha incorretos.'
-      case 'auth/email-already-in-use':
-        return 'Este e-mail já está em uso.'
-      case 'auth/weak-password':
-        return 'A senha deve ter pelo menos 6 caracteres.'
-      case 'auth/too-many-requests':
-        return 'Muitas tentativas. Aguarde alguns minutos.'
-      default:
-        return 'Erro de autenticação.'
-    }
-  }
-  return 'Erro de autenticação.'
 }

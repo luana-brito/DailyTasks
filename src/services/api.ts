@@ -1,115 +1,121 @@
-import {
-  collection,
-  doc,
-  setDoc,
-  addDoc,
-  updateDoc,
-  deleteDoc,
-  deleteField,
-  serverTimestamp
-} from 'firebase/firestore'
-import { db } from './firebase'
+import { getApiUrl, AUTH_TOKEN_KEY } from '../config'
 import type { Tarefa, Usuario, Produto, SolicitacaoCadastro } from '../types'
 
-function firestoreDb() {
-  if (!db) {
-    throw new Error(
-      'Firebase não configurado. Crie o arquivo .env na raiz do projeto (veja .env.example).'
-    )
-  }
-  return db
+function getToken(): string | null {
+  return localStorage.getItem(AUTH_TOKEN_KEY)
 }
 
-const removeUndefined = <T extends Record<string, unknown>>(obj: T): Partial<T> => {
-  const result: Partial<T> = {}
-  for (const key in obj) {
-    if (obj[key] !== undefined) {
-      result[key] = obj[key]
+async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const headers: Record<string, string> = {
+    ...(init.headers as Record<string, string> | undefined),
+    Accept: 'application/json'
+  }
+  const token = getToken()
+  if (token) headers.Authorization = `Bearer ${token}`
+  if (init.body != null && typeof init.body === 'string' && !headers['Content-Type']) {
+    headers['Content-Type'] = 'application/json'
+  }
+
+  const base = getApiUrl()
+  const res = await fetch(`${base}${path}`, { ...init, headers })
+  if (res.status === 204) return undefined as T
+
+  const text = await res.text()
+  let data: unknown = null
+  if (text) {
+    try {
+      data = JSON.parse(text)
+    } catch {
+      data = { error: text }
     }
   }
-  return result
+
+  if (!res.ok) {
+    const msg =
+      data && typeof data === 'object' && data !== null && 'error' in data
+        ? String((data as { error: string }).error)
+        : `Erro HTTP ${res.status}`
+    throw new Error(msg)
+  }
+
+  return data as T
 }
 
-// Usuários --------------------------------------------------------------------
+export function setAuthToken(token: string | null) {
+  if (token) localStorage.setItem(AUTH_TOKEN_KEY, token)
+  else localStorage.removeItem(AUTH_TOKEN_KEY)
+}
 
-export type CriarUsuarioPayload = Omit<Usuario, 'id' | 'criadoEm' | 'atualizadoEm'>
+// --- Auth -------------------------------------------------------------------
 
-export async function criarUsuarioFirestore(
-  uid: string,
-  payload: CriarUsuarioPayload
-): Promise<Usuario> {
-  const usuarioRef = doc(firestoreDb(), 'usuarios', uid)
-  
-  const dadosLimpos = removeUndefined(payload)
-  
-  await setDoc(usuarioRef, {
-    ...dadosLimpos,
-    criadoEm: serverTimestamp(),
-    atualizadoEm: serverTimestamp()
+export type LoginResponse = { token: string; user: Usuario }
+
+export async function loginApi(email: string, password: string): Promise<LoginResponse> {
+  return apiFetch<LoginResponse>('/api/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ email: email.trim().toLowerCase(), password })
   })
+}
 
-  const now = new Date().toISOString()
-  return {
-    id: uid,
-    ...payload,
-    criadoEm: now,
-    atualizadoEm: now
-  }
+export async function meApi(): Promise<Usuario> {
+  return apiFetch<Usuario>('/api/auth/me')
+}
+
+// --- Usuários ---------------------------------------------------------------
+
+export type CriarUsuarioPayload = Omit<Usuario, 'id' | 'criadoEm' | 'atualizadoEm'> & {
+  email: string
+  password: string
+}
+
+export async function criarUsuarioApi(payload: CriarUsuarioPayload): Promise<Usuario> {
+  return apiFetch<Usuario>('/api/usuarios', {
+    method: 'POST',
+    body: JSON.stringify({
+      email: payload.email,
+      password: payload.password,
+      login: payload.login || payload.email,
+      nome: payload.nome,
+      telefone: payload.telefone,
+      status: payload.status,
+      role: payload.role
+    })
+  })
 }
 
 export type AtualizarUsuarioPayload = Partial<
   Omit<Usuario, 'id' | 'criadoEm' | 'atualizadoEm'>
->
+> & {
+  password?: string
+  currentPassword?: string
+}
 
-export async function atualizarUsuarioApi(
-  id: string,
-  payload: AtualizarUsuarioPayload
-): Promise<void> {
-  const usuarioRef = doc(firestoreDb(), 'usuarios', id)
-  
-  const dadosLimpos = removeUndefined(payload)
-  
-  await updateDoc(usuarioRef, {
-    ...dadosLimpos,
-    atualizadoEm: serverTimestamp()
+export async function atualizarUsuarioApi(id: string, payload: AtualizarUsuarioPayload): Promise<Usuario> {
+  return apiFetch<Usuario>(`/api/usuarios/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload)
   })
 }
 
 export async function removerUsuarioApi(id: string): Promise<void> {
-  const usuarioRef = doc(firestoreDb(), 'usuarios', id)
-  await deleteDoc(usuarioRef)
+  await apiFetch(`/api/usuarios/${encodeURIComponent(id)}`, { method: 'DELETE' })
 }
 
-// Tarefas ---------------------------------------------------------------------
+// --- Tarefas ----------------------------------------------------------------
 
 export type CriarTarefaPayload = Omit<Tarefa, 'id' | 'criadaEm' | 'atualizadaEm'>
 
 export async function criarTarefaApi(payload: CriarTarefaPayload): Promise<Tarefa> {
-  const tarefasRef = collection(firestoreDb(), 'tarefas')
-  
-  const dadosLimpos = removeUndefined(payload)
-  
-  const docRef = await addDoc(tarefasRef, {
-    ...dadosLimpos,
-    criadaEm: serverTimestamp(),
-    atualizadaEm: serverTimestamp()
+  return apiFetch<Tarefa>('/api/tarefas', {
+    method: 'POST',
+    body: JSON.stringify(payload)
   })
-
-  const now = new Date().toISOString()
-  return {
-    id: docRef.id,
-    ...payload,
-    criadaEm: now,
-    atualizadaEm: now
-  }
 }
 
 export type AtualizarTarefaPayload = Partial<Omit<Tarefa, 'id' | 'criadaEm' | 'atualizadaEm'>>
 
 export type OpcoesAtualizarTarefa = {
-  /** Remove o campo `cronometroInicioEm` no Firestore (fim da sessão do cronômetro) */
   removerCronometroInicio?: boolean
-  /** Remove `tempoTrabalhadoHoras` */
   removerTempoTrabalhado?: boolean
 }
 
@@ -118,118 +124,87 @@ export async function atualizarTarefaApi(
   payload: AtualizarTarefaPayload,
   opcoes?: OpcoesAtualizarTarefa
 ): Promise<Tarefa> {
-  const tarefaRef = doc(firestoreDb(), 'tarefas', id)
-
-  const dadosLimpos = removeUndefined(payload as Record<string, unknown>) as Record<string, unknown>
-  if (opcoes?.removerCronometroInicio) {
-    dadosLimpos.cronometroInicioEm = deleteField()
-  }
-  if (opcoes?.removerTempoTrabalhado) {
-    dadosLimpos.tempoTrabalhadoHoras = deleteField()
-  }
-
-  await updateDoc(tarefaRef, {
-    ...dadosLimpos,
-    atualizadaEm: serverTimestamp()
-  })
-
-  return {
-    id,
+  const body = {
     ...payload,
-    criadaEm: new Date().toISOString(),
-    atualizadaEm: new Date().toISOString()
-  } as Tarefa
+    removeCronometroInicio: opcoes?.removerCronometroInicio,
+    removeTempoTrabalhado: opcoes?.removerTempoTrabalhado
+  }
+  return apiFetch<Tarefa>(`/api/tarefas/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body)
+  })
 }
 
 export async function removerTarefaApi(id: string): Promise<void> {
-  const tarefaRef = doc(firestoreDb(), 'tarefas', id)
-  await deleteDoc(tarefaRef)
+  await apiFetch(`/api/tarefas/${encodeURIComponent(id)}`, { method: 'DELETE' })
 }
 
-// Produtos --------------------------------------------------------------------
+// --- Produtos ---------------------------------------------------------------
 
 export type CriarProdutoPayload = Omit<Produto, 'id' | 'criadoEm' | 'atualizadoEm'>
 
 export async function criarProdutoApi(payload: CriarProdutoPayload): Promise<Produto> {
-  const produtosRef = collection(firestoreDb(), 'produtos')
-  
-  const dadosLimpos = removeUndefined(payload)
-  
-  const docRef = await addDoc(produtosRef, {
-    ...dadosLimpos,
-    criadoEm: serverTimestamp(),
-    atualizadoEm: serverTimestamp()
+  return apiFetch<Produto>('/api/produtos', {
+    method: 'POST',
+    body: JSON.stringify(payload)
   })
-
-  const now = new Date().toISOString()
-  return {
-    id: docRef.id,
-    ...payload,
-    criadoEm: now,
-    atualizadoEm: now
-  }
 }
 
 export type AtualizarProdutoPayload = Partial<Omit<Produto, 'id' | 'criadoEm' | 'atualizadoEm'>>
 
-export async function atualizarProdutoApi(
-  id: string,
-  payload: AtualizarProdutoPayload
-): Promise<void> {
-  const produtoRef = doc(firestoreDb(), 'produtos', id)
-  
-  const dadosLimpos = removeUndefined(payload)
-  
-  await updateDoc(produtoRef, {
-    ...dadosLimpos,
-    atualizadoEm: serverTimestamp()
+export async function atualizarProdutoApi(id: string, payload: AtualizarProdutoPayload): Promise<Produto> {
+  return apiFetch<Produto>(`/api/produtos/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload)
   })
 }
 
 export async function removerProdutoApi(id: string): Promise<void> {
-  const produtoRef = doc(firestoreDb(), 'produtos', id)
-  await deleteDoc(produtoRef)
+  await apiFetch(`/api/produtos/${encodeURIComponent(id)}`, { method: 'DELETE' })
 }
 
-// Solicitações de Cadastro ----------------------------------------------------
+// --- Solicitações -----------------------------------------------------------
 
 export type CriarSolicitacaoPayload = Omit<SolicitacaoCadastro, 'id' | 'status' | 'criadoEm' | 'atualizadoEm'>
 
 export async function criarSolicitacaoApi(payload: CriarSolicitacaoPayload): Promise<SolicitacaoCadastro> {
-  const solicitacoesRef = collection(firestoreDb(), 'solicitacoes_cadastro')
-  
-  const dadosLimpos = removeUndefined(payload)
-  
-  const docRef = await addDoc(solicitacoesRef, {
-    ...dadosLimpos,
-    status: 'PENDENTE',
-    criadoEm: serverTimestamp(),
-    atualizadoEm: serverTimestamp()
+  const token = getToken()
+  const base = getApiUrl()
+  const headers: Record<string, string> = { 'Content-Type': 'application/json', Accept: 'application/json' }
+  if (token) headers.Authorization = `Bearer ${token}`
+  const res = await fetch(`${base}/api/solicitacoes`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(payload)
   })
-
-  const now = new Date().toISOString()
-  return {
-    id: docRef.id,
-    ...payload,
-    status: 'PENDENTE',
-    criadoEm: now,
-    atualizadoEm: now
-  }
+  const text = await res.text()
+  const data = text ? JSON.parse(text) : null
+  if (!res.ok) throw new Error(data?.error || `Erro HTTP ${res.status}`)
+  return data as SolicitacaoCadastro
 }
 
 export async function atualizarSolicitacaoApi(
   id: string,
   status: SolicitacaoCadastro['status']
-): Promise<void> {
-  const solicitacaoRef = doc(firestoreDb(), 'solicitacoes_cadastro', id)
-  
-  await updateDoc(solicitacaoRef, {
-    status,
-    atualizadoEm: serverTimestamp()
+): Promise<SolicitacaoCadastro> {
+  return apiFetch<SolicitacaoCadastro>(`/api/solicitacoes/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status })
   })
 }
 
-export async function removerSolicitacaoApi(id: string): Promise<void> {
-  const solicitacaoRef = doc(firestoreDb(), 'solicitacoes_cadastro', id)
-  await deleteDoc(solicitacaoRef)
+export async function fetchUsuarios(): Promise<Usuario[]> {
+  return apiFetch<Usuario[]>('/api/usuarios')
+}
+
+export async function fetchTarefas(): Promise<Tarefa[]> {
+  return apiFetch<Tarefa[]>('/api/tarefas')
+}
+
+export async function fetchProdutos(): Promise<Produto[]> {
+  return apiFetch<Produto[]>('/api/produtos')
+}
+
+export async function fetchSolicitacoesPendentes(): Promise<SolicitacaoCadastro[]> {
+  return apiFetch<SolicitacaoCadastro[]>('/api/solicitacoes?status=PENDENTE')
 }

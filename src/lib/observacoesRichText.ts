@@ -1,6 +1,6 @@
 import DOMPurify from 'dompurify'
 
-/** Tamanho máximo do HTML guardado no Firestore (bytes aproximados). */
+/** Tamanho máximo do HTML das observações ao persistir (bytes aproximados). */
 export const LIMITE_OBSERVACOES_HTML = 20_000
 
 const TAGS_PERMITIDAS = [

@@ -48,11 +48,13 @@ Os artefatos finais ficam em `dist/` após o build. O service worker e o manifes
 ## Autenticação e gestão de usuários
 
 - A aplicação exige login. Apenas usuários com status **Ativo** conseguem acessar o painel.
-- Ao executar o app pela primeira vez é criado um usuário administrador padrão:
+- Na primeira execução da **API** (`server/`), se não houver usuários, é criado um administrador padrão:
 
-  | Login | Senha    | Observações                        |
-  | ----- | -------- | ---------------------------------- |
-  | admin | admin123 | Recomenda-se alterar após o login. |
+  | E-mail        | Senha    | Observações                        |
+  | ------------- | -------- | ---------------------------------- |
+  | admin@local   | admin123 | Recomenda-se alterar após o login. |
+
+  (Valores configuráveis em `server/.env`: `BOOTSTRAP_ADMIN_EMAIL`, `BOOTSTRAP_ADMIN_PASSWORD`.)
 
 - Somente usuários com perfil **Administrador** têm acesso à aba **Gestão de usuários** para criar, editar, inativar/ativar e excluir contas.
 - Não é possível excluir o último usuário ativo nem remover o usuário atualmente autenticado.
@@ -92,16 +94,78 @@ npm run dev
 
 Por padrão, a API roda em `http://localhost:3333` (ajuste a variável `PORT` se necessário). No primeiro carregamento, um usuário administrador padrão é criado automaticamente:
 
-| Login | Senha    |
-| ----- | -------- |
-| admin | admin123 |
+| E-mail      | Senha    |
+| ----------- | -------- |
+| admin@local | admin123 |
 
 ### Apontando o front-end para a API
 
-No projeto PWA (`pwa-daily/`), defina o endpoint em `.env.local` (opcional, o padrão já aponta para `http://localhost:3333`):
+Na raiz do projeto, em `.env`, use `VITE_API_URL` para o build de produção. Em desenvolvimento (`npm run dev`), o Vite encaminha `/api` para `localhost:3333` automaticamente.
 
 ```
 VITE_API_URL=http://localhost:3333
 ```
 
 Com isso, usuários e tarefas serão sincronizados entre todos os navegadores que consumirem a mesma API.
+
+## Deploy na Vercel (projeto completo)
+
+O repositório está preparado para **front + API no mesmo projeto** na Vercel:
+
+- **PWA**: build estático (`dist/`).
+- **API**: função serverless em `api/index.mjs` (Express), atendendo `/api/*`.
+- **Banco**: [Turso](https://turso.tech/) (SQLite na nuvem, plano gratuito). O arquivo `database.sqlite` local **não** é usado na Vercel.
+
+### 1. Criar o banco na Turso
+
+1. Instale a CLI: [Turso CLI](https://docs.turso.tech/cli/introduction) ou use o painel em [turso.tech](https://turso.tech/).
+2. `turso auth login`
+3. `turso db create dailytasks` (nome à sua escolha)
+4. `turso db show dailytasks` → copie a **URL** (começa com `libsql://...`)
+5. `turso db tokens create dailytasks` → copie o **token**
+
+### 2. Variáveis na Vercel
+
+No projeto → **Settings → Environment Variables** (Production, Preview se quiser):
+
+| Nome | Valor |
+|------|--------|
+| `TURSO_DATABASE_URL` | URL `libsql://...` do passo acima |
+| `TURSO_AUTH_TOKEN` | Token gerado |
+| `JWT_SECRET` | String longa e aleatória (não compartilhe) |
+| `ALLOWED_ORIGINS` | (Opcional) `https://seu-app.vercel.app` — se vazio, CORS aceita qualquer origem (útil só para testes) |
+
+**Não** é obrigatório definir `VITE_API_URL`: em produção o front chama `/api/...` no **mesmo domínio** da Vercel.
+
+### 3. Conectar e publicar
+
+1. [vercel.com](https://vercel.com) → **Add New** → **Project** → importe o repositório.
+2. **Root Directory**: raiz (onde está o `package.json` do front).
+3. Confirme build `npm run build` e saída `dist` (já em `vercel.json`).
+4. Adicione as variáveis acima e faça **Deploy**.
+
+No primeiro acesso à API com banco vazio, é criado o admin padrão (`admin@local` / `admin123`, ou o que você definir com `BOOTSTRAP_ADMIN_EMAIL` / `BOOTSTRAP_ADMIN_PASSWORD`).
+
+### 4. Importar backup JSON na Turso
+
+Na sua máquina, com as variáveis `TURSO_*` apontando para o mesmo banco:
+
+```bash
+cd server
+npm install
+set TURSO_DATABASE_URL=...
+set TURSO_AUTH_TOKEN=...
+set IMPORT_DEFAULT_PASSWORD=senhaParaUsuariosImportados
+npm run import-firestore -- caminho\para\backup.json
+```
+
+### Desenvolvimento local
+
+- Front: `npm run dev` (proxy `/api` → `localhost:3333`).
+- API: `cd server && npm run dev` — usa arquivo **`server/database.sqlite`** via LibSQL (não precisa de Turso).
+
+### API em outro host (opcional)
+
+Se preferir manter só o front na Vercel e a API em Render/Railway etc., defina **`VITE_API_URL`** na Vercel com a URL da API e configure **`ALLOWED_ORIGINS`** nessa API com a URL do front.
+
+Arquivos: `vercel.json`, `api/index.mjs`, `.vercelignore`.
