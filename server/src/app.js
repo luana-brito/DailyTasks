@@ -129,6 +129,137 @@ export async function createApp() {
     })
   )
 
+  app.get(
+    '/api/usuarios/export',
+    authMiddleware,
+    requireAdmin(db),
+    ah(async (req, res) => {
+      const rows = await db.all('SELECT * FROM users ORDER BY lower(nome)', [])
+      res.json({
+        app: 'dailytasks-users',
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        users: rows.map((row) => ({
+          id: row.id,
+          login: row.login,
+          email: row.email,
+          password_hash: row.password_hash,
+          nome: row.nome,
+          telefone: row.telefone,
+          status: row.status,
+          role: row.role,
+          criado_em: row.criado_em,
+          atualizado_em: row.atualizado_em
+        }))
+      })
+    })
+  )
+
+  app.post(
+    '/api/usuarios/import',
+    authMiddleware,
+    requireAdmin(db),
+    ah(async (req, res) => {
+      const body = req.body
+      let list = Array.isArray(body) ? body : body?.users
+      if (!Array.isArray(list) || list.length === 0) {
+        return res.status(400).json({ error: 'Envie um objeto { users: [...] } ou um array de utilizadores.' })
+      }
+
+      const normalized = []
+      const emailsSeen = new Set()
+      for (let i = 0; i < list.length; i++) {
+        const u = list[i]
+        const id = String(u?.id || '').trim()
+        const login = String(u?.login || '').trim()
+        const email = String(u?.email || '').trim().toLowerCase()
+        const password_hash = String(u?.password_hash || '').trim()
+        const nome = String(u?.nome || '').trim()
+        const telefone = String(u?.telefone || '').replace(/\D/g, '')
+        const status = u?.status === 'INATIVO' ? 'INATIVO' : 'ATIVO'
+        const role = u?.role === 'ADMIN' ? 'ADMIN' : 'USUARIO'
+        const criado_em = String(u?.criado_em || '').trim() || new Date().toISOString()
+        const atualizado_em = String(u?.atualizado_em || '').trim() || new Date().toISOString()
+
+        if (!id || !login || !email || !password_hash || !nome) {
+          return res.status(400).json({ error: `Linha ${i + 1}: id, login, email, password_hash e nome são obrigatórios.` })
+        }
+        if (telefone.length < 10) {
+          return res.status(400).json({ error: `Linha ${i + 1}: telefone inválido (${email}).` })
+        }
+        if (emailsSeen.has(email)) {
+          return res.status(400).json({ error: `E-mail duplicado no ficheiro: ${email}` })
+        }
+        emailsSeen.add(email)
+        normalized.push({
+          id,
+          login,
+          email,
+          password_hash,
+          nome,
+          telefone,
+          status,
+          role,
+          criado_em,
+          atualizado_em
+        })
+      }
+
+      const existing = await db.all('SELECT * FROM users', [])
+      const byId = Object.fromEntries(existing.map((r) => [r.id, { ...r }]))
+      for (const u of normalized) {
+        byId[u.id] = { ...u }
+      }
+      const activeAdmins = Object.values(byId).filter((r) => r.role === 'ADMIN' && r.status === 'ATIVO').length
+      if (activeAdmins < 1) {
+        return res.status(400).json({
+          error: 'O resultado teria zero administradores ativos. Corrija o ficheiro antes de importar.'
+        })
+      }
+
+      const ex = db.isPostgres ? 'EXCLUDED' : 'excluded'
+      for (const u of normalized) {
+        const clash = await db.get('SELECT id FROM users WHERE lower(email) = lower(?) AND id != ?', [
+          u.email,
+          u.id
+        ])
+        if (clash) {
+          return res.status(409).json({
+            error: `E-mail ${u.email} já pertence a outro utilizador (id diferente).`
+          })
+        }
+        await db.run(
+          `INSERT INTO users (id, login, email, password_hash, nome, telefone, status, role, criado_em, atualizado_em)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT (id) DO UPDATE SET
+             login = ${ex}.login,
+             email = ${ex}.email,
+             password_hash = ${ex}.password_hash,
+             nome = ${ex}.nome,
+             telefone = ${ex}.telefone,
+             status = ${ex}.status,
+             role = ${ex}.role,
+             criado_em = ${ex}.criado_em,
+             atualizado_em = ${ex}.atualizado_em`,
+          [
+            u.id,
+            u.login,
+            u.email,
+            u.password_hash,
+            u.nome,
+            u.telefone,
+            u.status,
+            u.role,
+            u.criado_em,
+            u.atualizado_em
+          ]
+        )
+      }
+
+      res.json({ ok: true, imported: normalized.length })
+    })
+  )
+
   app.post(
     '/api/usuarios',
     authMiddleware,

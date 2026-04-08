@@ -1,5 +1,10 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import type { Usuario, UsuarioRole, UsuarioStatus, SolicitacaoCadastro } from '../types'
+import {
+  exportUsuariosBackupApi,
+  importUsuariosBackupApi,
+  type UsuariosBackupPayload
+} from '../services/api'
 import { IconCheck, IconX } from './Icons'
 
 type UsuarioFormValores = {
@@ -52,6 +57,7 @@ export function UserManagement({
   const [modalAberto, setModalAberto] = useState(false)
   const [modalAprovacao, setModalAprovacao] = useState<SolicitacaoCadastro | null>(null)
   const [senhaAprovacao, setSenhaAprovacao] = useState('')
+  const inputImportRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (usuarioEditando) {
@@ -233,6 +239,74 @@ export function UserManagement({
     }
   }
 
+  const handleExportarUsuarios = async () => {
+    setErro(null)
+    setMensagem(null)
+    setProcessando(true)
+    try {
+      const data = await exportUsuariosBackupApi()
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `usuarios-dailytasks-${new Date().toISOString().slice(0, 10)}.json`
+      a.click()
+      URL.revokeObjectURL(url)
+      setMensagem(
+        'Exportação concluída. O ficheiro contém hashes de senha — guarde-o com segurança e não o partilhe.'
+      )
+    } catch (err) {
+      setErro(err instanceof Error ? err.message : 'Não foi possível exportar.')
+    } finally {
+      setProcessando(false)
+    }
+  }
+
+  const handleEscolherImportar = () => {
+    setErro(null)
+    setMensagem(null)
+    inputImportRef.current?.click()
+  }
+
+  const handleFicheiroImport = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+
+    if (
+      !confirm(
+        'Importar utilizadores a partir deste ficheiro?\n\n' +
+          '• Utilizadores com o mesmo id serão atualizados.\n' +
+          '• É necessário existir pelo menos um administrador ativo após a importação.\n' +
+          '• E-mails duplicados com ids diferentes serão rejeitados.'
+      )
+    ) {
+      return
+    }
+
+    setProcessando(true)
+    setErro(null)
+    setMensagem(null)
+    try {
+      const text = await file.text()
+      const parsed = JSON.parse(text) as unknown
+      let payload: UsuariosBackupPayload | { users: UsuariosBackupPayload['users'] }
+      if (Array.isArray(parsed)) {
+        payload = { users: parsed as UsuariosBackupPayload['users'] }
+      } else if (parsed && typeof parsed === 'object' && Array.isArray((parsed as UsuariosBackupPayload).users)) {
+        payload = parsed as UsuariosBackupPayload
+      } else {
+        throw new Error('Formato inválido: esperado { users: [...] } ou um array de utilizadores.')
+      }
+      const res = await importUsuariosBackupApi(payload)
+      setMensagem(`Importação concluída: ${res.imported} utilizador(es) processado(s). A lista atualiza em segundos.`)
+    } catch (err) {
+      setErro(err instanceof Error ? err.message : 'Não foi possível importar.')
+    } finally {
+      setProcessando(false)
+    }
+  }
+
   return (
     <>
       <div className="user-management">
@@ -241,10 +315,45 @@ export function UserManagement({
             <h3>Gestão de Usuários</h3>
             <p>Controle quem pode acessar o painel de tarefas.</p>
           </div>
-          <button type="button" className="button primary" onClick={abrirModalCriar} disabled={processando}>
-            Novo usuário
-          </button>
+          <div className="user-management-header-actions">
+            <button
+              type="button"
+              className="button secondary"
+              onClick={handleExportarUsuarios}
+              disabled={processando}
+              title="Descarregar JSON com todos os utilizadores (inclui hashes de senha)"
+            >
+              Exportar JSON
+            </button>
+            <button
+              type="button"
+              className="button secondary"
+              onClick={handleEscolherImportar}
+              disabled={processando}
+              title="Carregar ficheiro exportado desta ou de outra instalação"
+            >
+              Importar JSON
+            </button>
+            <input
+              ref={inputImportRef}
+              type="file"
+              accept="application/json,.json"
+              className="sr-only"
+              aria-hidden
+              tabIndex={-1}
+              onChange={handleFicheiroImport}
+            />
+            <button type="button" className="button primary" onClick={abrirModalCriar} disabled={processando}>
+              Novo usuário
+            </button>
+          </div>
         </header>
+
+        <p className="user-management-backup-hint">
+          Use <strong>Exportar</strong> para cópia de segurança ou para migrar contas para outro servidor.{' '}
+          <strong>Importar</strong> faz criação/atualização por <code>id</code>; palavras-passe mantêm-se se o
+          ficheiro tiver os hashes originais.
+        </p>
 
         {mensagem && !modalAberto && !modalAprovacao && <p className="form-success">{mensagem}</p>}
         {erro && !modalAberto && !modalAprovacao && <p className="form-error">{erro}</p>}

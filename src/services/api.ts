@@ -101,6 +101,38 @@ export async function removerUsuarioApi(id: string): Promise<void> {
   await apiFetch(`/api/usuarios/${encodeURIComponent(id)}`, { method: 'DELETE' })
 }
 
+/** Backup gerado por GET /api/usuarios/export (contém password_hash — trate como confidencial). */
+export type UsuariosBackupPayload = {
+  app: string
+  version: number
+  exportedAt: string
+  users: Array<{
+    id: string
+    login: string
+    email: string
+    password_hash: string
+    nome: string
+    telefone: string
+    status: string
+    role: string
+    criado_em: string
+    atualizado_em: string
+  }>
+}
+
+export async function exportUsuariosBackupApi(): Promise<UsuariosBackupPayload> {
+  return apiFetch<UsuariosBackupPayload>('/api/usuarios/export')
+}
+
+export async function importUsuariosBackupApi(
+  payload: UsuariosBackupPayload | { users: UsuariosBackupPayload['users'] }
+): Promise<{ ok: boolean; imported: number }> {
+  return apiFetch<{ ok: boolean; imported: number }>('/api/usuarios/import', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  })
+}
+
 // --- Tarefas ----------------------------------------------------------------
 
 export type CriarTarefaPayload = Omit<Tarefa, 'id' | 'criadaEm' | 'atualizadaEm'>

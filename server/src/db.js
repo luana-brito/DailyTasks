@@ -140,6 +140,7 @@ async function initPostgresSchema(sql) {
 
 function wrapPostgres(sql) {
   return {
+    isPostgres: true,
     async get(q, args = []) {
       const text = placeholdersToPg(q)
       const rows = await sql.unsafe(text, args)
@@ -191,6 +192,7 @@ export async function createDatabase() {
   await initSqliteSchema(client)
 
   return {
+    isPostgres: false,
     async get(q, args = []) {
       const r = await client.execute({ sql: q, args })
       return r.rows[0] ? normalizeRow(r.rows[0]) : undefined
