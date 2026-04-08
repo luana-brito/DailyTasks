@@ -841,49 +841,7 @@ export async function createApp() {
       }
 
       const ordered = sortTarefasImportOrder(normalized)
-      const ex = db.isPostgres ? 'EXCLUDED' : 'excluded'
-
-      for (const r of ordered) {
-        await db.run(
-          `INSERT INTO tarefas (
-            id, titulo, produto, status, prioridade, tempo_trabalhado_horas, observacoes, data,
-            atribuido_ids, criado_por_id, parent_id, cronometro_segundos_acumulados, cronometro_inicio_em,
-            criada_em, atualizada_em
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-          ON CONFLICT (id) DO UPDATE SET
-            titulo = ${ex}.titulo,
-            produto = ${ex}.produto,
-            status = ${ex}.status,
-            prioridade = ${ex}.prioridade,
-            tempo_trabalhado_horas = ${ex}.tempo_trabalhado_horas,
-            observacoes = ${ex}.observacoes,
-            data = ${ex}.data,
-            atribuido_ids = ${ex}.atribuido_ids,
-            criado_por_id = ${ex}.criado_por_id,
-            parent_id = ${ex}.parent_id,
-            cronometro_segundos_acumulados = ${ex}.cronometro_segundos_acumulados,
-            cronometro_inicio_em = ${ex}.cronometro_inicio_em,
-            criada_em = ${ex}.criada_em,
-            atualizada_em = ${ex}.atualizada_em`,
-          [
-            r.id,
-            r.titulo,
-            r.produto,
-            r.status,
-            r.prioridade,
-            r.tempo_trabalhado_horas,
-            r.observacoes,
-            r.data,
-            r.atribuido_ids,
-            r.criado_por_id,
-            r.parent_id,
-            r.cronometro_segundos_acumulados,
-            r.cronometro_inicio_em,
-            r.criada_em,
-            r.atualizada_em
-          ]
-        )
-      }
+      await db.bulkUpsertTarefasImport(ordered)
 
       res.json({ ok: true, imported: normalized.length })
     })

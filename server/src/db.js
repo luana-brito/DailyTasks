@@ -116,6 +116,40 @@ export const POSTGRES_DDL = [
   )`
 ]
 
+/** Colunas na ordem do INSERT em massa de tarefas (import JSON). */
+const TAREFAS_IMPORT_COLS = [
+  'id',
+  'titulo',
+  'produto',
+  'status',
+  'prioridade',
+  'tempo_trabalhado_horas',
+  'observacoes',
+  'data',
+  'atribuido_ids',
+  'criado_por_id',
+  'parent_id',
+  'cronometro_segundos_acumulados',
+  'cronometro_inicio_em',
+  'criada_em',
+  'atualizada_em'
+]
+
+const SQLITE_TAREFAS_UPSERT_SET = `titulo = excluded.titulo,
+    produto = excluded.produto,
+    status = excluded.status,
+    prioridade = excluded.prioridade,
+    tempo_trabalhado_horas = excluded.tempo_trabalhado_horas,
+    observacoes = excluded.observacoes,
+    data = excluded.data,
+    atribuido_ids = excluded.atribuido_ids,
+    criado_por_id = excluded.criado_por_id,
+    parent_id = excluded.parent_id,
+    cronometro_segundos_acumulados = excluded.cronometro_segundos_acumulados,
+    cronometro_inicio_em = excluded.cronometro_inicio_em,
+    criada_em = excluded.criada_em,
+    atualizada_em = excluded.atualizada_em`
+
 function placeholdersToPg(sql) {
   let n = 0
   return sql.replace(/\?/g, () => `$${++n}`)
@@ -138,25 +172,60 @@ async function initPostgresSchema(sql) {
   }
 }
 
-function wrapPostgres(sql) {
+function wrapPostgres(pg) {
   return {
     isPostgres: true,
     async get(q, args = []) {
       const text = placeholdersToPg(q)
-      const rows = await sql.unsafe(text, args)
+      const rows = await pg.unsafe(text, args)
       const row = rows[0]
       return row ? normalizeRow(row) : undefined
     },
     async all(q, args = []) {
       const text = placeholdersToPg(q)
-      const rows = await sql.unsafe(text, args)
+      const rows = await pg.unsafe(text, args)
       const list = Array.isArray(rows) ? rows : []
       return list.map(normalizeRow)
     },
     async run(q, args = []) {
       const text = placeholdersToPg(q)
-      const result = await sql.unsafe(text, args)
+      const result = await pg.unsafe(text, args)
       return { changes: Number(result.count ?? 0) }
+    },
+    /**
+     * Importação em lote: poucas idas à base (evita timeout em serverless com milhares de tarefas).
+     */
+    async bulkUpsertTarefasImport(rows) {
+      if (!rows.length) return
+      const CHUNK = 200
+      for (let i = 0; i < rows.length; i += CHUNK) {
+        const chunk = rows.slice(i, i + CHUNK)
+        const objs = chunk.map((r) => {
+          const o = {}
+          for (const c of TAREFAS_IMPORT_COLS) {
+            o[c] = r[c]
+          }
+          return o
+        })
+        await pg`
+          INSERT INTO tarefas ${pg(objs, ...TAREFAS_IMPORT_COLS)}
+          ON CONFLICT (id) DO UPDATE SET
+            titulo = EXCLUDED.titulo,
+            produto = EXCLUDED.produto,
+            status = EXCLUDED.status,
+            prioridade = EXCLUDED.prioridade,
+            tempo_trabalhado_horas = EXCLUDED.tempo_trabalhado_horas,
+            observacoes = EXCLUDED.observacoes,
+            data = EXCLUDED.data,
+            atribuido_ids = EXCLUDED.atribuido_ids,
+            criado_por_id = EXCLUDED.criado_por_id,
+            parent_id = EXCLUDED.parent_id,
+            cronometro_segundos_acumulados = EXCLUDED.cronometro_segundos_acumulados,
+            cronometro_inicio_em = EXCLUDED.cronometro_inicio_em,
+            criada_em = EXCLUDED.criada_em,
+            atualizada_em = EXCLUDED.atualizada_em
+        `
+      }
     }
   }
 }
@@ -191,6 +260,9 @@ export async function createDatabase() {
   const client = createClient({ url: pathToFileURL(path).href })
   await initSqliteSchema(client)
 
+  const colsSql = TAREFAS_IMPORT_COLS.join(', ')
+  const oneRowPh = '(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
+
   return {
     isPostgres: false,
     async get(q, args = []) {
@@ -204,6 +276,22 @@ export async function createDatabase() {
     async run(q, args = []) {
       const r = await client.execute({ sql: q, args })
       return { changes: Number(r.rowsAffected ?? 0) }
+    },
+    async bulkUpsertTarefasImport(rows) {
+      if (!rows.length) return
+      const CHUNK = 60
+      for (let i = 0; i < rows.length; i += CHUNK) {
+        const chunk = rows.slice(i, i + CHUNK)
+        const placeholders = chunk.map(() => oneRowPh).join(',')
+        const args = chunk.flatMap((r) =>
+          TAREFAS_IMPORT_COLS.map((c) => r[c])
+        )
+        await client.execute({
+          sql: `INSERT INTO tarefas (${colsSql}) VALUES ${placeholders}
+            ON CONFLICT (id) DO UPDATE SET ${SQLITE_TAREFAS_UPSERT_SET}`,
+          args
+        })
+      }
     }
   }
 }
