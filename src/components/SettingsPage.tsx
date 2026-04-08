@@ -8,6 +8,8 @@ import {
 } from '../services/api'
 
 type SettingsPageProps = {
+  /** Exportar/importar JSON de produtos e “apagar inativos” só para administradores. */
+  isAdmin: boolean
   produtos: Produto[]
   onCriarProduto: (dados: { nome: string; executiva: Executiva }) => Promise<void>
   onAtualizarProduto: (id: string, dados: { nome?: string; executiva?: Executiva; ativo?: boolean }) => Promise<void>
@@ -25,6 +27,7 @@ const formInicial: FormProduto = {
 }
 
 export function SettingsPage({
+  isAdmin,
   produtos,
   onCriarProduto,
   onAtualizarProduto,
@@ -218,53 +221,59 @@ export function SettingsPage({
             <p>Gerencie os produtos disponíveis no sistema.</p>
           </div>
           <div className="user-management-header-actions">
-            <button
-              type="button"
-              className="button secondary"
-              onClick={handleExportarProdutos}
-              disabled={processando}
-              title="Descarregar produtos em JSON"
-            >
-              Exportar JSON
-            </button>
-            <button
-              type="button"
-              className="button secondary"
-              onClick={() => inputImportRef.current?.click()}
-              disabled={processando}
-              title="Importar produtos a partir de JSON"
-            >
-              Importar JSON
-            </button>
-            <button
-              type="button"
-              className="button danger"
-              onClick={handleRemoverInativos}
-              disabled={processando || totalInativos === 0}
-              title="Apaga da base todos os produtos com estado Inativo"
-            >
-              Apagar inativos ({totalInativos})
-            </button>
-            <input
-              ref={inputImportRef}
-              type="file"
-              accept="application/json,.json"
-              className="sr-only"
-              aria-hidden
-              tabIndex={-1}
-              onChange={handleImportarProdutos}
-            />
+            {isAdmin && (
+              <>
+                <button
+                  type="button"
+                  className="button secondary"
+                  onClick={handleExportarProdutos}
+                  disabled={processando}
+                  title="Descarregar produtos em JSON"
+                >
+                  Exportar JSON
+                </button>
+                <button
+                  type="button"
+                  className="button secondary"
+                  onClick={() => inputImportRef.current?.click()}
+                  disabled={processando}
+                  title="Importar produtos a partir de JSON"
+                >
+                  Importar JSON
+                </button>
+                <button
+                  type="button"
+                  className="button danger"
+                  onClick={handleRemoverInativos}
+                  disabled={processando || totalInativos === 0}
+                  title="Apaga da base todos os produtos com estado Inativo"
+                >
+                  Apagar inativos ({totalInativos})
+                </button>
+                <input
+                  ref={inputImportRef}
+                  type="file"
+                  accept="application/json,.json"
+                  className="sr-only"
+                  aria-hidden
+                  tabIndex={-1}
+                  onChange={handleImportarProdutos}
+                />
+              </>
+            )}
             <button type="button" className="button primary" onClick={() => abrirModal()} disabled={processando}>
               Novo produto
             </button>
           </div>
         </header>
 
-        <p className="user-management-backup-hint">
-          <strong>Exportar / Importar</strong>: o mesmo <strong>nome</strong> (sem distinguir maiúsculas) atualiza o
-          produto já existente. No JSON, se o nome repetir, prevalece a última entrada. As tarefas guardam o nome como
-          texto.
-        </p>
+        {isAdmin && (
+          <p className="user-management-backup-hint">
+            <strong>Exportar / Importar</strong>: o mesmo <strong>nome</strong> (sem distinguir maiúsculas) atualiza o
+            produto já existente. No JSON, se o nome repetir, prevalece a última entrada. As tarefas guardam o nome como
+            texto.
+          </p>
+        )}
 
         {mensagem && !modalAberto && <p className="form-success">{mensagem}</p>}
         {erro && !modalAberto && <p className="form-error">{erro}</p>}

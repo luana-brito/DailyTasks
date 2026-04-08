@@ -18,6 +18,8 @@ type UsuarioFormValores = {
 }
 
 type UserManagementProps = {
+  /** Exportar/importar JSON (utilizadores) só para administradores. */
+  isAdmin: boolean
   usuarios: Usuario[]
   usuarioAtual: Usuario
   solicitacoes: SolicitacaoCadastro[]
@@ -38,12 +40,13 @@ const estadoInicial = (): UsuarioFormValores => ({
   senha: ''
 })
 
-export function UserManagement({ 
-  usuarios, 
-  usuarioAtual, 
+export function UserManagement({
+  isAdmin,
+  usuarios,
+  usuarioAtual,
   solicitacoes,
-  onCreate, 
-  onUpdate, 
+  onCreate,
+  onUpdate,
   onDelete,
   onAprovarSolicitacao,
   onRecusarSolicitacao
@@ -322,44 +325,50 @@ export function UserManagement({
             <p>Controle quem pode acessar o painel de tarefas.</p>
           </div>
           <div className="user-management-header-actions">
-            <button
-              type="button"
-              className="button secondary"
-              onClick={handleExportarUsuarios}
-              disabled={processando}
-              title="Descarregar JSON com todos os utilizadores (inclui hashes de senha)"
-            >
-              Exportar JSON
-            </button>
-            <button
-              type="button"
-              className="button secondary"
-              onClick={handleEscolherImportar}
-              disabled={processando}
-              title="Carregar ficheiro exportado desta ou de outra instalação"
-            >
-              Importar JSON
-            </button>
-            <input
-              ref={inputImportRef}
-              type="file"
-              accept="application/json,.json"
-              className="sr-only"
-              aria-hidden
-              tabIndex={-1}
-              onChange={handleFicheiroImport}
-            />
+            {isAdmin && (
+              <>
+                <button
+                  type="button"
+                  className="button secondary"
+                  onClick={handleExportarUsuarios}
+                  disabled={processando}
+                  title="Descarregar JSON com todos os utilizadores (inclui hashes de senha)"
+                >
+                  Exportar JSON
+                </button>
+                <button
+                  type="button"
+                  className="button secondary"
+                  onClick={handleEscolherImportar}
+                  disabled={processando}
+                  title="Carregar ficheiro exportado desta ou de outra instalação"
+                >
+                  Importar JSON
+                </button>
+                <input
+                  ref={inputImportRef}
+                  type="file"
+                  accept="application/json,.json"
+                  className="sr-only"
+                  aria-hidden
+                  tabIndex={-1}
+                  onChange={handleFicheiroImport}
+                />
+              </>
+            )}
             <button type="button" className="button primary" onClick={abrirModalCriar} disabled={processando}>
               Novo usuário
             </button>
           </div>
         </header>
 
-        <p className="user-management-backup-hint">
-          Use <strong>Exportar</strong> para cópia de segurança ou para migrar contas para outro servidor.{' '}
-          <strong>Importar</strong> faz criação/atualização por <code>id</code>; palavras-passe mantêm-se se o
-          ficheiro tiver os hashes originais.
-        </p>
+        {isAdmin && (
+          <p className="user-management-backup-hint">
+            Use <strong>Exportar</strong> para cópia de segurança ou para migrar contas para outro servidor.{' '}
+            <strong>Importar</strong> faz criação/atualização por <code>id</code>; palavras-passe mantêm-se se o
+            ficheiro tiver os hashes originais.
+          </p>
+        )}
 
         {mensagem && !modalAberto && !modalAprovacao && <p className="form-success">{mensagem}</p>}
         {erro && !modalAberto && !modalAprovacao && <p className="form-error">{erro}</p>}

@@ -1014,7 +1014,7 @@ const {
 
           {abaAtiva === 'tarefas' && (
             <div className="header-tarefas-actions">
-              {usuarioLogado.role === 'ADMIN' && <TarefasBackupToolbar />}
+              <TarefasBackupToolbar isAdmin={usuarioLogado.role === 'ADMIN'} />
               <button
                 type="button"
                 className="button primary"
@@ -1099,6 +1099,7 @@ const {
         ) : abaAtiva === 'usuarios' ? (
           <section className="panel">
             <UserManagement
+              isAdmin={usuarioLogado.role === 'ADMIN'}
               usuarios={usuarios}
               usuarioAtual={usuarioLogado}
               solicitacoes={solicitacoes}
@@ -1112,6 +1113,7 @@ const {
         ) : (
           <section className="panel">
             <SettingsPage
+              isAdmin={usuarioLogado.role === 'ADMIN'}
               produtos={produtos}
               onCriarProduto={handleCriarProduto}
               onAtualizarProduto={handleAtualizarProduto}

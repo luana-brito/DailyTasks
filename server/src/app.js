@@ -767,35 +767,57 @@ export async function createApp() {
           atribuidoIdsStr = JSON.stringify(t.atribuidoIds)
         }
         atribuidoIdsStr = String(atribuidoIdsStr ?? '[]')
+        let atribuidoParsed
         try {
-          const parsed = JSON.parse(atribuidoIdsStr)
-          if (!Array.isArray(parsed)) throw new Error('no array')
+          atribuidoParsed = JSON.parse(atribuidoIdsStr)
+          if (!Array.isArray(atribuidoParsed)) throw new Error('no array')
         } catch {
           return res.status(400).json({ error: `Tarefa ${id}: atribuido_ids deve ser JSON array (string).` })
         }
 
-        const criado_por_id = String(t?.criado_por_id ?? '').trim()
+        let criado_por_id = String(
+          t?.criado_por_id ?? t?.criadoPorId ?? t?.createdById ?? ''
+        ).trim()
         if (!criado_por_id) {
-          return res.status(400).json({ error: `Tarefa ${id}: criado_por_id é obrigatório.` })
+          const firstResp = atribuidoParsed.find((x) => x != null && String(x).trim())
+          if (firstResp != null) criado_por_id = String(firstResp).trim()
+        }
+        if (!criado_por_id && req.userId) {
+          criado_por_id = String(req.userId).trim()
+        }
+        if (!criado_por_id) {
+          return res.status(400).json({
+            error: `Tarefa ${id}: criado_por_id é obrigatório (ou criadoPorId, ou responsáveis em atribuido_ids).`
+          })
         }
 
-        const criada_em = String(t?.criada_em || '').trim() || new Date().toISOString()
-        const atualizada_em = String(t?.atualizada_em || '').trim() || new Date().toISOString()
+        const criada_em =
+          String(t?.criada_em ?? t?.criadaEm ?? '').trim() || new Date().toISOString()
+        const atualizada_em =
+          String(t?.atualizada_em ?? t?.atualizadaEm ?? '').trim() || new Date().toISOString()
 
         const tempo_trabalhado_horas =
           t?.tempo_trabalhado_horas != null && t.tempo_trabalhado_horas !== ''
             ? Number(t.tempo_trabalhado_horas)
-            : null
+            : t?.tempoTrabalhadoHoras != null && t.tempoTrabalhadoHoras !== ''
+              ? Number(t.tempoTrabalhadoHoras)
+              : null
         const observacoes = t?.observacoes != null ? String(t.observacoes) : null
-        const parent_id = t?.parent_id != null && String(t.parent_id).trim() ? String(t.parent_id).trim() : null
+        const parentRaw = t?.parent_id ?? t?.parentId
+        const parent_id =
+          parentRaw != null && String(parentRaw).trim() ? String(parentRaw).trim() : null
         const cronometro_segundos_acumulados =
           t?.cronometro_segundos_acumulados != null && t.cronometro_segundos_acumulados !== ''
             ? Number(t.cronometro_segundos_acumulados)
-            : null
+            : t?.cronometroSegundosAcumulados != null && t.cronometroSegundosAcumulados !== ''
+              ? Number(t.cronometroSegundosAcumulados)
+              : null
         const cronometro_inicio_em =
           t?.cronometro_inicio_em != null && String(t.cronometro_inicio_em).trim()
             ? String(t.cronometro_inicio_em).trim()
-            : null
+            : t?.cronometroInicioEm != null && String(t.cronometroInicioEm).trim()
+              ? String(t.cronometroInicioEm).trim()
+              : null
 
         normalized.push({
           id,

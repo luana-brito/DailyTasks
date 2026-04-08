@@ -5,10 +5,15 @@ import {
   type TarefasBackupPayload
 } from '../services/api'
 
+type TarefasBackupToolbarProps = {
+  /** Só administradores devem ver ou usar export/import de tarefas. */
+  isAdmin: boolean
+}
+
 /**
- * Exportar/importar tarefas em JSON (apenas para colocar na barra quando o utilizador é admin).
+ * Exportar/importar tarefas em JSON — usar apenas com isAdmin={true}.
  */
-export function TarefasBackupToolbar() {
+export function TarefasBackupToolbar({ isAdmin }: TarefasBackupToolbarProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [processando, setProcessando] = useState(false)
 
@@ -60,6 +65,10 @@ export function TarefasBackupToolbar() {
     } finally {
       setProcessando(false)
     }
+  }
+
+  if (!isAdmin) {
+    return null
   }
 
   return (
