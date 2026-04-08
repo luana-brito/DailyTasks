@@ -149,7 +149,8 @@ function wrapPostgres(sql) {
     async all(q, args = []) {
       const text = placeholdersToPg(q)
       const rows = await sql.unsafe(text, args)
-      return rows.map(normalizeRow)
+      const list = Array.isArray(rows) ? rows : []
+      return list.map(normalizeRow)
     },
     async run(q, args = []) {
       const text = placeholdersToPg(q)
@@ -173,7 +174,12 @@ export async function createDatabase() {
   }
 
   if (databaseUrl) {
-    const sql = postgres(databaseUrl, { max: Number(process.env.PG_POOL_MAX || 5) })
+    const sql = postgres(databaseUrl, {
+      max: Number(process.env.PG_POOL_MAX || 5),
+      // URLs "pooled" (Neon, Supabase transaction pooler, Vercel Postgres) usam PgBouncer em modo
+      // transaction: prepared statements não são fiáveis entre ligações → 500 intermitentes.
+      prepare: process.env.PG_PREPARE === 'true'
+    })
     await initPostgresSchema(sql)
     return wrapPostgres(sql)
   }

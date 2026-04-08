@@ -136,6 +136,10 @@ Se antes tinhas `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN`, **remove-as** — já
 - Abre **Vercel → Project → Logs** (ou **Runtime Logs** da função serverless).
 - Causas típicas: URI do Postgres incorreta, IP/firewall do Neon a bloquear (Neon costuma permitir tudo por defeito), ou palavra-passe da URI com caracteres especiais mal codificados na URL.
 
+### 500 só nalgumas rotas (ex.: solicitações), às vezes depois de já ter funcionado
+
+- Com **connection string “pooled”** (Neon, Supabase, etc.), o pooler (PgBouncer) em modo **transaction** não suporta bem *prepared statements* entre ligações. O cliente `postgres` do projeto usa **`prepare: false` por omissão** para evitar erros intermitentes. Se tiveres definido `PG_PREPARE=true` sem necessidade, remove essa variável e volta a fazer deploy.
+
 ### CORS no browser
 
 - Define **`ALLOWED_ORIGINS`** exatamente com o URL do front (com `https://`, sem barra no fim), ou deixa vazio temporariamente para testar.
