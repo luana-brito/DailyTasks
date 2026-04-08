@@ -96,7 +96,7 @@ export async function createApp() {
       if (!email || !password) {
         return res.status(400).json({ error: 'E-mail e senha são obrigatórios.' })
       }
-      const row = await db.get('SELECT * FROM users WHERE email = ? COLLATE NOCASE', [email])
+      const row = await db.get('SELECT * FROM users WHERE lower(email) = lower(?)', [email])
       if (!row || row.status !== 'ATIVO') {
         return res.status(401).json({ error: 'E-mail ou senha incorretos.' })
       }
@@ -124,7 +124,7 @@ export async function createApp() {
     '/api/usuarios',
     authMiddleware,
     ah(async (req, res) => {
-      const rows = await db.all('SELECT * FROM users ORDER BY nome COLLATE NOCASE', [])
+      const rows = await db.all('SELECT * FROM users ORDER BY lower(nome)', [])
       res.json(rows.map(rowToUsuario))
     })
   )
@@ -150,7 +150,7 @@ export async function createApp() {
         return res.status(400).json({ error: 'Telefone inválido.' })
       }
 
-      const exists = await db.get('SELECT id FROM users WHERE email = ? COLLATE NOCASE', [email])
+      const exists = await db.get('SELECT id FROM users WHERE lower(email) = lower(?)', [email])
       if (exists) return res.status(409).json({ error: 'E-mail já cadastrado.' })
 
       const id = randomUUID()
@@ -505,7 +505,7 @@ export async function createApp() {
         return res.status(400).json({ error: 'Dados inválidos.' })
       }
 
-      const exists = await db.get('SELECT id FROM users WHERE email = ? COLLATE NOCASE', [email])
+      const exists = await db.get('SELECT id FROM users WHERE lower(email) = lower(?)', [email])
       if (exists) return res.status(409).json({ error: 'E-mail já cadastrado.' })
 
       const id = randomUUID()

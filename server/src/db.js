@@ -1,4 +1,5 @@
 import { createClient } from '@libsql/client'
+import postgres from 'postgres'
 import { dirname, join } from 'path'
 import { fileURLToPath, pathToFileURL } from 'url'
 import { mkdirSync, existsSync } from 'fs'
@@ -14,7 +15,7 @@ function normalizeRow(row) {
   return o
 }
 
-const DDL = [
+const SQLITE_DDL = [
   `CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
     login TEXT NOT NULL,
@@ -64,51 +65,136 @@ const DDL = [
   )`
 ]
 
-async function initSchema(client, isRemote) {
-  if (!isRemote) {
-    try {
-      await client.execute('PRAGMA journal_mode = WAL')
-    } catch {
-      /* ignore */
-    }
+/** Exportado para o script de importação JSON. */
+export const POSTGRES_DDL = [
+  `CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    login TEXT NOT NULL,
+    email TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    nome TEXT NOT NULL,
+    telefone TEXT NOT NULL,
+    status TEXT NOT NULL,
+    role TEXT NOT NULL,
+    criado_em TEXT NOT NULL,
+    atualizado_em TEXT NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS produtos (
+    id TEXT PRIMARY KEY,
+    nome TEXT NOT NULL,
+    executiva TEXT,
+    ativo BOOLEAN NOT NULL DEFAULT TRUE,
+    criado_em TEXT NOT NULL,
+    atualizado_em TEXT NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS tarefas (
+    id TEXT PRIMARY KEY,
+    titulo TEXT NOT NULL,
+    produto TEXT NOT NULL,
+    status TEXT NOT NULL,
+    prioridade TEXT NOT NULL,
+    tempo_trabalhado_horas DOUBLE PRECISION,
+    observacoes TEXT,
+    data TEXT NOT NULL,
+    atribuido_ids TEXT NOT NULL,
+    criado_por_id TEXT NOT NULL,
+    parent_id TEXT,
+    cronometro_segundos_acumulados INTEGER,
+    cronometro_inicio_em TEXT,
+    criada_em TEXT NOT NULL,
+    atualizada_em TEXT NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS solicitacoes_cadastro (
+    id TEXT PRIMARY KEY,
+    nome TEXT NOT NULL,
+    email TEXT NOT NULL,
+    telefone TEXT NOT NULL,
+    motivo TEXT,
+    status TEXT NOT NULL,
+    criado_em TEXT NOT NULL,
+    atualizado_em TEXT NOT NULL
+  )`
+]
+
+function placeholdersToPg(sql) {
+  let n = 0
+  return sql.replace(/\?/g, () => `$${++n}`)
+}
+
+async function initSqliteSchema(client) {
+  try {
+    await client.execute('PRAGMA journal_mode = WAL')
+  } catch {
+    /* ignore */
   }
-  for (const sql of DDL) {
-    await client.execute(sql)
+  for (const statement of SQLITE_DDL) {
+    await client.execute(statement)
+  }
+}
+
+async function initPostgresSchema(sql) {
+  for (const statement of POSTGRES_DDL) {
+    await sql.unsafe(statement)
+  }
+}
+
+function wrapPostgres(sql) {
+  return {
+    async get(q, args = []) {
+      const text = placeholdersToPg(q)
+      const rows = await sql.unsafe(text, args)
+      const row = rows[0]
+      return row ? normalizeRow(row) : undefined
+    },
+    async all(q, args = []) {
+      const text = placeholdersToPg(q)
+      const rows = await sql.unsafe(text, args)
+      return rows.map(normalizeRow)
+    },
+    async run(q, args = []) {
+      const text = placeholdersToPg(q)
+      const result = await sql.unsafe(text, args)
+      return { changes: Number(result.count ?? 0) }
+    }
   }
 }
 
 /**
- * Local: arquivo SQLite (padrão server/database.sqlite).
- * Produção (Vercel): Turso — defina TURSO_DATABASE_URL e TURSO_AUTH_TOKEN.
+ * Produção (Vercel): PostgreSQL — defina DATABASE_URL (Neon, Vercel Postgres, Supabase, etc.).
+ * Local sem DATABASE_URL: SQLite em arquivo (padrão server/database.sqlite) via LibSQL.
  */
 export async function createDatabase() {
-  const tursoUrl = process.env.TURSO_DATABASE_URL?.trim()
-  const authToken = process.env.TURSO_AUTH_TOKEN?.trim()
+  const databaseUrl = process.env.DATABASE_URL?.trim()
 
-  let client
-  let isRemote = Boolean(tursoUrl)
-  if (tursoUrl) {
-    client = createClient({ url: tursoUrl, authToken: authToken || undefined })
-  } else {
-    const path = process.env.DATABASE_PATH || join(__dirname, '..', 'database.sqlite')
-    const dir = dirname(path)
-    if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
-    client = createClient({ url: pathToFileURL(path).href })
+  if (process.env.VERCEL && !databaseUrl) {
+    throw new Error(
+      'Configure DATABASE_URL nas variáveis de ambiente do projeto na Vercel (PostgreSQL; ex.: Neon ou Storage da Vercel). SQLite em ficheiro não é suportado em serverless.'
+    )
   }
 
-  await initSchema(client, isRemote)
+  if (databaseUrl) {
+    const sql = postgres(databaseUrl, { max: Number(process.env.PG_POOL_MAX || 5) })
+    await initPostgresSchema(sql)
+    return wrapPostgres(sql)
+  }
+
+  const path = process.env.DATABASE_PATH || join(__dirname, '..', 'database.sqlite')
+  const dir = dirname(path)
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+  const client = createClient({ url: pathToFileURL(path).href })
+  await initSqliteSchema(client)
 
   return {
-    async get(sql, args = []) {
-      const r = await client.execute({ sql, args })
+    async get(q, args = []) {
+      const r = await client.execute({ sql: q, args })
       return r.rows[0] ? normalizeRow(r.rows[0]) : undefined
     },
-    async all(sql, args = []) {
-      const r = await client.execute({ sql, args })
+    async all(q, args = []) {
+      const r = await client.execute({ sql: q, args })
       return r.rows.map(normalizeRow)
     },
-    async run(sql, args = []) {
-      const r = await client.execute({ sql, args })
+    async run(q, args = []) {
+      const r = await client.execute({ sql: q, args })
       return { changes: Number(r.rowsAffected ?? 0) }
     }
   }
