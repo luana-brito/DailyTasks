@@ -3,6 +3,7 @@ import type { Produto, Executiva } from '../types'
 import {
   exportProdutosBackupApi,
   importProdutosBackupApi,
+  removerProdutosInativosApi,
   type ProdutosBackupPayload
 } from '../services/api'
 
@@ -67,15 +68,6 @@ export function SettingsPage({
       return
     }
 
-    const duplicado = produtos.some(
-      p => p.nome.toUpperCase() === nomeNormalizado && p.id !== editandoId
-    )
-
-    if (duplicado) {
-      setErro('Já existe um produto com este nome.')
-      return
-    }
-
     setProcessando(true)
 
     try {
@@ -90,7 +82,7 @@ export function SettingsPage({
           nome: nomeNormalizado,
           executiva: form.executiva
         })
-        setMensagem('Produto criado com sucesso.')
+        setMensagem('Produto criado com sucesso (ou atualizado se o nome já existia).')
       }
       fecharModal()
     } catch (err) {
@@ -123,6 +115,33 @@ export function SettingsPage({
   }
 
   const totalAtivos = produtos.filter(p => p.ativo).length
+  const totalInativos = produtos.length - totalAtivos
+
+  const handleRemoverInativos = async () => {
+    if (totalInativos === 0) {
+      setErro('Não há produtos inativos para remover.')
+      setMensagem(null)
+      return
+    }
+    if (
+      !confirm(
+        `Remover permanentemente ${totalInativos} produto(s) inativo(s)? Tarefas que referenciem esses nomes mantêm o texto; apenas a linha do produto é apagada.`
+      )
+    ) {
+      return
+    }
+    setErro(null)
+    setMensagem(null)
+    setProcessando(true)
+    try {
+      const res = await removerProdutosInativosApi()
+      setMensagem(`Removidos ${res.removed} produto(s) inativo(s). A lista atualiza em segundos.`)
+    } catch (err) {
+      setErro(err instanceof Error ? err.message : 'Erro ao remover produtos inativos.')
+    } finally {
+      setProcessando(false)
+    }
+  }
 
   const handleExportarProdutos = async () => {
     setErro(null)
@@ -217,6 +236,15 @@ export function SettingsPage({
             >
               Importar JSON
             </button>
+            <button
+              type="button"
+              className="button danger"
+              onClick={handleRemoverInativos}
+              disabled={processando || totalInativos === 0}
+              title="Apaga da base todos os produtos com estado Inativo"
+            >
+              Apagar inativos ({totalInativos})
+            </button>
             <input
               ref={inputImportRef}
               type="file"
@@ -233,9 +261,9 @@ export function SettingsPage({
         </header>
 
         <p className="user-management-backup-hint">
-          <strong>Exportar / Importar</strong> copia produtos por <code>id</code> (inclui PESSOAL se estiver no
-          ficheiro). As tarefas usam o <strong>nome</strong> do produto como texto — mantenha nomes alinhados entre
-          ambientes.
+          <strong>Exportar / Importar</strong>: o mesmo <strong>nome</strong> (sem distinguir maiúsculas) atualiza o
+          produto já existente. No JSON, se o nome repetir, prevalece a última entrada. As tarefas guardam o nome como
+          texto.
         </p>
 
         {mensagem && !modalAberto && <p className="form-success">{mensagem}</p>}

@@ -505,8 +505,7 @@ export async function createApp() {
         return res.status(400).json({ error: 'Envie { produtos: [...] } ou um array.' })
       }
 
-      const normalized = []
-      const nomesSeen = new Set()
+      const porNomeUltimo = new Map()
       const ex = db.isPostgres ? 'EXCLUDED' : 'excluded'
 
       for (let i = 0; i < list.length; i++) {
@@ -521,18 +520,16 @@ export async function createApp() {
         if (!id || !nome) {
           return res.status(400).json({ error: `Produto linha ${i + 1}: id e nome são obrigatórios.` })
         }
-        const nomeKey = nome.toUpperCase()
-        if (nomesSeen.has(nomeKey)) {
-          return res.status(400).json({ error: `Nome de produto duplicado no ficheiro: ${nome}` })
-        }
-        nomesSeen.add(nomeKey)
-        normalized.push({ id, nome, executiva, ativo, criado_em, atualizado_em })
+        const nomeKey = nome.trim().toLowerCase()
+        porNomeUltimo.set(nomeKey, { id, nome, executiva, ativo, criado_em, atualizado_em })
       }
+
+      const normalized = [...porNomeUltimo.values()]
 
       let sobrescritosPorNome = 0
       for (const u of normalized) {
         const mesmoNome = await db.get(
-          'SELECT id FROM produtos WHERE upper(trim(nome)) = upper(trim(?)) AND id != ?',
+          'SELECT id FROM produtos WHERE lower(trim(nome)) = lower(trim(?)) AND id != ?',
           [u.nome, u.id]
         )
         if (mesmoNome) {
@@ -572,14 +569,27 @@ export async function createApp() {
     ah(async (req, res) => {
       const nome = String(req.body?.nome || '').trim()
       if (!nome) return res.status(400).json({ error: 'Nome do produto é obrigatório.' })
-      const executiva = req.body.executiva || null
+      const executiva =
+        req.body.executiva != null && String(req.body.executiva).trim() ? String(req.body.executiva).trim() : null
       const ativo = req.body.ativo === false ? 0 : 1
-      const id = randomUUID()
       const now = new Date().toISOString()
+
+      const existing = await db.get('SELECT id FROM produtos WHERE lower(trim(nome)) = lower(trim(?))', [nome])
+      const ativoArg = db.isPostgres ? ativo === 1 : ativo
+      if (existing) {
+        await db.run(
+          `UPDATE produtos SET nome = ?, executiva = ?, ativo = ?, atualizado_em = ? WHERE id = ?`,
+          [nome, executiva, ativoArg, now, existing.id]
+        )
+        const updated = await db.get('SELECT * FROM produtos WHERE id = ?', [existing.id])
+        return res.status(200).json(rowToProduto(updated))
+      }
+
+      const id = randomUUID()
       await db.run(
         `INSERT INTO produtos (id, nome, executiva, ativo, criado_em, atualizado_em)
          VALUES (?, ?, ?, ?, ?, ?)`,
-        [id, nome, executiva, ativo, now, now]
+        [id, nome, executiva, ativoArg, now, now]
       )
       const row = await db.get('SELECT * FROM produtos WHERE id = ?', [id])
       res.status(201).json(rowToProduto(row))
@@ -597,6 +607,34 @@ export async function createApp() {
       const executiva = req.body.executiva !== undefined ? req.body.executiva : undefined
       const ativo = req.body.ativo !== undefined ? (req.body.ativo ? 1 : 0) : undefined
 
+      if (nome !== undefined) {
+        const outro = await db.get(
+          'SELECT id FROM produtos WHERE lower(trim(nome)) = lower(trim(?)) AND id != ?',
+          [nome, req.params.id]
+        )
+        if (outro) {
+          const executivaFinal = executiva !== undefined ? executiva : row.executiva
+          let ativoArg
+          if (ativo !== undefined) {
+            ativoArg = db.isPostgres ? !!req.body.ativo : ativo
+          } else {
+            ativoArg = db.isPostgres
+              ? !!(row.ativo === 1 || row.ativo === true)
+              : row.ativo === 1 || row.ativo === true
+                ? 1
+                : 0
+          }
+          const now = new Date().toISOString()
+          await db.run(
+            `UPDATE produtos SET nome = ?, executiva = ?, ativo = ?, atualizado_em = ? WHERE id = ?`,
+            [nome, executivaFinal, ativoArg, now, outro.id]
+          )
+          await db.run('DELETE FROM produtos WHERE id = ?', [req.params.id])
+          const updated = await db.get('SELECT * FROM produtos WHERE id = ?', [outro.id])
+          return res.json(rowToProduto(updated))
+        }
+      }
+
       const updates = []
       const vals = []
       if (nome !== undefined) {
@@ -609,7 +647,7 @@ export async function createApp() {
       }
       if (ativo !== undefined) {
         updates.push('ativo = ?')
-        vals.push(ativo)
+        vals.push(db.isPostgres ? !!req.body.ativo : ativo)
       }
       if (updates.length === 0) return res.json(rowToProduto(row))
 
@@ -619,6 +657,17 @@ export async function createApp() {
       await db.run(`UPDATE produtos SET ${updates.join(', ')} WHERE id = ?`, vals)
       const updated = await db.get('SELECT * FROM produtos WHERE id = ?', [req.params.id])
       res.json(rowToProduto(updated))
+    })
+  )
+
+  app.delete(
+    '/api/produtos/inativos',
+    authMiddleware,
+    requireAdmin(db),
+    ah(async (req, res) => {
+      const cond = db.isPostgres ? 'ativo IS NOT TRUE' : 'COALESCE(ativo, 0) = 0'
+      const result = await db.run(`DELETE FROM produtos WHERE ${cond}`)
+      res.json({ ok: true, removed: result.changes ?? 0 })
     })
   )
 

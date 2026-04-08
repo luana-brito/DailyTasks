@@ -264,6 +264,10 @@ export async function importProdutosBackupApi(
   )
 }
 
+export async function removerProdutosInativosApi(): Promise<{ ok: boolean; removed: number }> {
+  return apiFetch<{ ok: boolean; removed: number }>('/api/produtos/inativos', { method: 'DELETE' })
+}
+
 // --- Solicitações -----------------------------------------------------------
 
 export type CriarSolicitacaoPayload = Omit<SolicitacaoCadastro, 'id' | 'status' | 'criadoEm' | 'atualizadoEm'>
