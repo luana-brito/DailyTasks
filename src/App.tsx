@@ -115,7 +115,9 @@ const {
     produto: 'TODOS',
     status: 'TODOS',
     data: '',
-    atribuicoes: 'EU'
+    // "TODOS" evita lista vazia após migração SQLite→Postgres: tarefas usam ids antigos em atribuidoIds;
+    // "Eu" só mostra linhas onde o teu id coincide. Podes mudar para "Eu" na barra de filtros.
+    atribuicoes: 'TODOS'
   })
   /** Referência do mês/dia no calendário quando não há filtro por data na barra */
   const [calendarioRef, setCalendarioRef] = useState(() => hojeLocalISO())

@@ -205,6 +205,8 @@ Para **copiar** tudo do SQLite local para o Postgres de produção:
 
 Se der erro de **e-mail duplicado** (`UNIQUE`), o Postgres já tinha um utilizador com o mesmo e-mail que um registo do SQLite (ex.: dois admins). Apaga ou altera um dos lados e volta a correr o comando.
 
+**Lista vazia em produção mas a migração diz N tarefas:** o painel filtra por **“Atribuído”**. Com **“Eu”**, só aparecem tarefas em que o teu **id de utilizador** está em `atribuidoIds` — tem de ser o mesmo id que no SQLite (usa o **mesmo e-mail** no login). Tarefas **PESSOAL** exigem `criadoPorId` igual ao teu id. O filtro por defeito na app é **“Todos”** em atribuídos para evitar esta confusão após migração.
+
 ---
 
 ## Resumo rápido (checklist)

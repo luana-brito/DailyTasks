@@ -18,15 +18,18 @@
  * Aviso: utilizadores com o mesmo `id` em ambos os lados são atualizados no Postgres (UPSERT).
  */
 
-import 'dotenv/config'
+import dotenv from 'dotenv'
 import { createClient } from '@libsql/client'
 import postgres from 'postgres'
-import { dirname, join } from 'path'
+import { dirname, join, resolve } from 'path'
 import { fileURLToPath, pathToFileURL } from 'url'
 import { existsSync } from 'fs'
 import { POSTGRES_DDL } from '../src/db.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
+// Carrega .env da raiz do repo e de server/ (quem corre da raiz ou de server/ encontra DATABASE_URL)
+dotenv.config({ path: resolve(__dirname, '../../.env') })
+dotenv.config({ path: resolve(__dirname, '../.env') })
 
 const databaseUrl = process.env.DATABASE_URL?.trim()
 const sqlitePath = process.env.SOURCE_SQLITE_PATH?.trim() || join(__dirname, '..', 'database.sqlite')
@@ -46,14 +49,36 @@ const pg = postgres(databaseUrl, {
   prepare: process.env.PG_PREPARE === 'true'
 })
 
-for (const statement of POSTGRES_DDL) {
-  await pg.unsafe(statement)
-}
-
 const sqlite = createClient({ url: pathToFileURL(sqlitePath).href })
 
 console.log('Origem (SQLite):', sqlitePath)
 console.log('Destino (PostgreSQL):', databaseUrl.replace(/:[^:@]+@/, ':****@'))
+console.log('')
+
+async function countSqlite(table) {
+  try {
+    const r = await sqlite.execute({ sql: `SELECT COUNT(*) AS c FROM ${table}`, args: [] })
+    return Number(r.rows[0]?.c ?? 0)
+  } catch {
+    return 0
+  }
+}
+
+try {
+for (const statement of POSTGRES_DDL) {
+  await pg.unsafe(statement)
+}
+
+const cu = await countSqlite('users')
+const cp = await countSqlite('produtos')
+const ct = await countSqlite('tarefas')
+const cs = await countSqlite('solicitacoes_cadastro')
+console.log('Registos no SQLite:', cu, 'users,', cp, 'produtos,', ct, 'tarefas,', cs, 'solicitações.')
+if (ct === 0) {
+  console.warn(
+    'Aviso: 0 tarefas neste .sqlite. Confirma o ficheiro (SOURCE_SQLITE_PATH ou server/database.sqlite) e que a API local (cd server && npm run dev) é a que usas com o front.'
+  )
+}
 console.log('')
 
 const { rows: userRows } = await sqlite.execute({ sql: 'SELECT * FROM users', args: [] })
@@ -179,7 +204,29 @@ for (const r of solRows) {
   ns++
 }
 
-await pg.end()
+  const post = await pg.unsafe(
+    `SELECT
+    (SELECT COUNT(*)::int FROM users) AS u,
+    (SELECT COUNT(*)::int FROM produtos) AS p,
+    (SELECT COUNT(*)::int FROM tarefas) AS t,
+    (SELECT COUNT(*)::int FROM solicitacoes_cadastro) AS s`
+  )
+  const po = post[0]
+  console.log('Copiados para o Postgres:', nu, 'users,', np, 'produtos,', nt, 'tarefas,', ns, 'solicitações.')
+  console.log('Totais agora no Postgres:', po.u, 'users,', po.p, 'produtos,', po.t, 'tarefas,', po.s, 'solicitações.')
 
-console.log('Concluído:', nu, 'utilizadores,', np, 'produtos,', nt, 'tarefas,', ns, 'solicitações.')
-console.log('Volta a abrir o site em produção e faz login com as mesmas credenciais do SQLite.')
+  console.log('')
+  console.log('→ Faz login em produção com o MESMO e-mail que no PC (o id do utilizador é copiado).')
+  console.log('→ No filtro "Atribuído" usa "Todos" se não vires tarefas: "Eu" exige que o teu id esteja em atribuidoIds.')
+  console.log('→ Tarefas "PESSOAL" só aparecem se criadoPorId for o teu id.')
+} catch (err) {
+  console.error('Migração falhou:', err?.message || err)
+  if (String(err?.message || '').includes('unique') || String(err?.code || '') === '23505') {
+    console.error(
+      'Conflito UNIQUE (muitas vezes e-mail já existe no Postgres). Apaga utilizadores duplicados no Neon ou usa só uma base de admin antes de voltar a correr.'
+    )
+  }
+  process.exitCode = 1
+} finally {
+  await pg.end()
+}
