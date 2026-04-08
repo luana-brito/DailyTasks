@@ -146,7 +146,9 @@ Se antes tinhas `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN`, **remove-as** — já
 
 ### PWA / cache antigo
 
-- Após deploys grandes, faz um hard refresh ou testa em janela anónima. O `vercel.json` já reduz cache agressivo em ficheiros do service worker.
+- A app é PWA: o **service worker** pode servir o JavaScript antigo até ser atualizado. O projeto usa `registerType: autoUpdate` e `skipWaiting` para o novo SW assumir após cada deploy.
+- Se ainda vires a **versão velha** após deploy: **Ctrl+Shift+R** (hard refresh), ou Chrome → F12 → **Application** → **Service Workers** → **Unregister** → voltar a abrir o URL. Também podes testar em **janela anónima**.
+- Confirma na Vercel que o deployment mais recente está **Ready** e em **Production** (não só Preview).
 
 ---
 

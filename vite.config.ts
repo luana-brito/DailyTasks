@@ -15,7 +15,8 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'prompt',
+      // autoUpdate + skipWaiting: após deploy, o novo service worker assume sem depender de clique em "Atualizar"
+      registerType: 'autoUpdate',
       includeAssets: ['vite.svg'],
       manifest: {
         name: 'Diário de Tarefas',
@@ -40,7 +41,10 @@ export default defineConfig({
         ]
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,webmanifest}']
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,webmanifest}'],
+        cleanupOutdatedCaches: true,
+        skipWaiting: true,
+        clientsClaim: true
       }
     })
   ]
